@@ -855,6 +855,272 @@ h3 {
   resize: vertical;
 }
 
+.auth-page {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.auth-card {
+  box-shadow: 0 24px 70px rgba(17, 22, 18, 0.12);
+}
+
+.header-email {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.plan-tile {
+  display: grid;
+  gap: 6px;
+  min-height: 108px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf9;
+}
+
+.plan-tile strong {
+  font-size: 16px;
+}
+
+.plan-tile span {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.plan-tile small {
+  color: var(--muted);
+}
+
+.editor-chart-card {
+  margin-top: 16px;
+}
+
+.editable-curve {
+  touch-action: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.editable-curve circle {
+  cursor: grab;
+}
+
+.editable-curve circle:active {
+  cursor: grabbing;
+}
+
+.share-shell {
+  display: grid;
+  gap: 18px;
+  padding: 26px;
+  border-radius: 8px;
+}
+
+.share-hero {
+  display: grid;
+  gap: 12px;
+}
+
+.share-hero h1 {
+  max-width: 980px;
+  font-size: clamp(38px, 6vw, 72px);
+}
+
+.share-hero p {
+  max-width: 900px;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1.6;
+  opacity: 0.82;
+}
+
+.share-barista {
+  background: #f8faf6;
+}
+
+.share-baroque {
+  background: #1e1209;
+  color: #fff4dd;
+}
+
+.share-cyberpunk {
+  background: #060817;
+  color: #e7fbff;
+}
+
+.share-baroque .ant-card,
+.share-cyberpunk .ant-card {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+
+.share-baroque .muted,
+.share-cyberpunk .muted {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.share-divider {
+  height: 1px;
+  margin: 14px 0;
+  background: var(--line);
+}
+
+.official-guide-card,
+.profile-insight-card,
+.recommend-matrix-card {
+  border-color: rgba(24, 179, 106, 0.18);
+}
+
+.official-guide-head {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.official-guide-head h2 {
+  max-width: 820px;
+  margin: 10px 0 8px;
+  font-size: clamp(28px, 4vw, 48px);
+  line-height: 1.04;
+}
+
+.official-guide-head p {
+  max-width: 780px;
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.guide-source-note {
+  max-width: 210px;
+  padding: 10px 12px;
+  border: 1px solid rgba(24, 179, 106, 0.18);
+  border-radius: 8px;
+  background: #f3faf5;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.phase-note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  min-height: 148px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf9;
+}
+
+.phase-note svg {
+  color: var(--accent);
+}
+
+.phase-note span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.profile-family-card {
+  height: 100%;
+}
+
+.profile-family-card p,
+.profile-insight-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.family-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.profile-family-card small {
+  color: #6b4d2e;
+  line-height: 1.45;
+}
+
+.phase-bars {
+  display: flex;
+  min-height: 58px;
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.phase-bars div {
+  display: grid;
+  align-content: center;
+  min-width: 82px;
+  padding: 8px 10px;
+  color: #112018;
+}
+
+.phase-bars div:nth-child(1) {
+  background: #dff6e9;
+}
+
+.phase-bars div:nth-child(2) {
+  background: #fff0bd;
+}
+
+.phase-bars div:nth-child(3) {
+  background: #ffe0d1;
+}
+
+.phase-bars span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.recommend-flow {
+  margin-top: 16px;
+}
+
+.recommend-matrix {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.recommend-matrix > div {
+  display: grid;
+  gap: 10px;
+  min-height: 176px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf9;
+}
+
+.recommend-matrix span {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+blockquote {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.4;
+}
+
 @media (max-width: 820px) {
   .topbar,
   .nav {
@@ -865,7 +1131,8 @@ h3 {
   .grid,
   .home-hero,
   .result-layout,
-  .form-grid {
+  .form-grid,
+  .plan-grid {
     grid-template-columns: 1fr;
   }
 
@@ -883,9 +1150,15 @@ h3 {
   }
 
   .library-topbar,
-  .roast-stage-header {
+  .roast-stage-header,
+  .official-guide-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .guide-source-note {
+    max-width: none;
+    text-align: left;
   }
 
   .library-grid {
@@ -900,6 +1173,18 @@ h3 {
   .stage-metrics,
   .detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recommend-matrix {
+    grid-template-columns: 1fr;
+  }
+
+  .header-actions {
+    gap: 6px !important;
+  }
+
+  .header-email {
+    display: none;
   }
 }
 

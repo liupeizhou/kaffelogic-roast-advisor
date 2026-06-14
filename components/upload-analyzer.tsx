@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { CheckCircle2, FileUp, Save, UploadCloud } from "lucide-react";
-import { Alert, Button, Card, Col, Descriptions, Divider, Image, List, Row, Space, Tag, Upload } from "antd";
+import { Alert, Button, Card, Col, Descriptions, Divider, Image, List, Row, Space, Statistic, Tag, Upload } from "antd";
 import type { UploadProps } from "antd";
 import CurveChart from "@/components/curve-chart";
-import { adminHeaders } from "@/lib/admin-client";
+import { getDictionary, type Locale } from "@/lib/i18n";
 import type { RoastLogAnalysis, UploadAnalysisResult } from "@/lib/types";
 
-export default function UploadAnalyzer() {
+export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
+  const t = getDictionary(locale);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<UploadAnalysisResult | null>(null);
@@ -50,7 +51,6 @@ export default function UploadAnalyzer() {
     formData.set("file", file);
     const response = await fetch("/api/uploads/analyze", {
       method: "POST",
-      headers: adminHeaders(),
       body: formData
     });
 
@@ -69,7 +69,7 @@ export default function UploadAnalyzer() {
     setConfirming(true);
     const response = await fetch("/api/uploads/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...adminHeaders() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         uploadId: result.uploadId,
         confirmedAnalysis: { ...result.logAnalysis, needsReview: false },
@@ -94,14 +94,15 @@ export default function UploadAnalyzer() {
       <Card>
         <Space orientation="vertical" size={14} className="full-width">
           <Upload {...uploadProps}>
-            <Button icon={<FileUp size={18} />}>选择文件</Button>
+            <Button icon={<FileUp size={18} />}>{t.uploadPage.selectFile}</Button>
           </Upload>
           <Space size={12} wrap>
             <Button type="primary" icon={<UploadCloud size={18} />} disabled={!file} loading={loading} onClick={analyze}>
-              分析上传
+              {t.uploadPage.analyze}
             </Button>
-            <span className="muted">{file ? `${file.name} · ${Math.round(file.size / 1024)} KB` : "支持 .kpro 和 Kaffelogic log 图片，单文件最大 6MB。"}</span>
+            <span className="muted">{file ? `${file.name} · ${Math.round(file.size / 1024)} KB` : t.uploadPage.hint}</span>
           </Space>
+          <span className="muted">{t.uploadPage.quotaHint}</span>
           {error ? <Alert type="error" showIcon message={error} /> : null}
         </Space>
       </Card>
@@ -134,6 +135,13 @@ function AnalysisResult({ result, onConfirm, confirming }: {
               {result.persisted ? <Tag color="green" icon={<CheckCircle2 size={14} />}>已入库</Tag> : <Tag color="orange">本地预览</Tag>}
             </Space>
           </Card>
+          {result.quotaSnapshot ? (
+            <Row gutter={[12, 12]}>
+              <Col xs={24} md={8}><Card><Statistic title="今日剩余" value={result.quotaSnapshot.dailyRemaining} /></Card></Col>
+              <Col xs={24} md={8}><Card><Statistic title="本月剩余" value={result.quotaSnapshot.monthlyRemaining} /></Card></Col>
+              <Col xs={24} md={8}><Card><Statistic title="按量余额" value={result.quotaSnapshot.creditBalance} /></Card></Col>
+            </Row>
+          ) : null}
           {result.profile ? <KproResult result={result} /> : null}
           {result.logAnalysis ? <LogResult analysis={result.logAnalysis} uploadId={result.uploadId} onConfirm={onConfirm} confirming={confirming} /> : null}
         </Space>

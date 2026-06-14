@@ -33,8 +33,48 @@ export function parseKpro(text: string, fileName = "uploaded.kpro"): KproProfile
   };
 }
 
+export function serializeKpro(profile: KproProfile): string {
+  const fields: Record<string, string> = {
+    ...profile.rawFields,
+    profile_short_name: profile.shortName ?? "",
+    profile_designer: profile.designer ?? "",
+    profile_description: profile.description ?? "",
+    recommended_level: numberToField(profile.recommendedLevel),
+    expect_fc: numberToField(profile.expectedFirstCrackTemp),
+    expect_colrchange: numberToField(profile.expectedColourChangeTemp),
+    roast_levels: profile.roastLevels.map((value) => numberToField(value)).join(","),
+    roast_profile: curveToField(profile.roastCurvePoints),
+    fan_profile: curveToField(profile.fanCurvePoints)
+  };
+  if (profile.schemaVersion && !fields.profile_schema_version) {
+    fields.profile_schema_version = profile.schemaVersion;
+  }
+
+  const orderedKeys = [
+    "profile_short_name",
+    "profile_designer",
+    "profile_description",
+    "profile_schema_version",
+    "recommended_level",
+    "expect_fc",
+    "expect_colrchange",
+    "roast_levels",
+    "roast_profile",
+    "fan_profile"
+  ];
+  const keys = [
+    ...orderedKeys.filter((key) => key in fields),
+    ...Object.keys(fields).filter((key) => !orderedKeys.includes(key)).sort()
+  ];
+  return `${keys.map((key) => `${key}:${denormalizeText(fields[key] ?? "")}`).join("\n")}\n`;
+}
+
 export function normalizeText(value = ""): string {
   return value.replace(/\\v/g, "\n").replace(/\u000b/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+}
+
+export function denormalizeText(value = ""): string {
+  return value.replace(/\r?\n/g, "\\v");
 }
 
 export function parseOptionalNumber(value?: string): number | null {
@@ -73,6 +113,17 @@ export function parseCurvePoints(value?: string, kind: "temperature" | "fan" = "
   }
 
   return points;
+}
+
+function curveToField(points: CurvePoint[]) {
+  return points
+    .flatMap((point) => [numberToField(point.timeSeconds), numberToField(point.value)])
+    .join(",");
+}
+
+function numberToField(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  return Number.isInteger(value) ? value.toFixed(1) : `${Number(value.toFixed(3))}`;
 }
 
 export function inferProfileTags(profile: KproProfile) {

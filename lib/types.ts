@@ -66,11 +66,13 @@ export type UploadAnalysisResult = {
   persisted: boolean;
   profile?: KproProfile;
   logAnalysis?: RoastLogAnalysis;
+  quotaSnapshot?: import("@/lib/quota").QuotaSnapshot;
   error?: string;
 };
 
 export type UploadRecord = {
   id: string;
+  owner_id?: string | null;
   file_name: string;
   file_hash: string;
   file_kind: UploadFileKind;
@@ -78,4 +80,6 @@ export type UploadRecord = {
   storage_path: string | null;
   size_bytes: number;
   parse_status: ParseStatus;
+  visibility?: "private" | "public" | "unlisted";
+  source_scope?: "user" | "official" | "community" | "system";
 };

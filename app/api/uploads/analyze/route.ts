@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireUserResponse } from "@/lib/auth";
 import { createNeedsReviewAnalysis } from "@/lib/diagnostics";
 import { parseKpro } from "@/lib/kpro";
 import { analyzeRoastLogImage } from "@/lib/openai-vision";
+import { chargeSuccessfulAnalysis, getQuotaSnapshot } from "@/lib/quota";
 import {
   findExistingUpload,
   insertUploadRecord,
@@ -17,10 +18,19 @@ import { assertUploadAllowed, buildStoragePath, classifyUpload, hashBuffer, toDa
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const denied = requireAdmin(request);
+  const { user, denied } = await requireUserResponse();
   if (denied) return denied;
 
   try {
+    const supabase = await getSupabaseAdmin();
+    if (!supabase) {
+      return NextResponse.json({ error: "Supabase 尚未配置，无法保存上传和扣减额度。" }, { status: 503 });
+    }
+    const quotaBefore = await getQuotaSnapshot(supabase, user.id);
+    if (!quotaBefore.canAnalyze) {
+      return NextResponse.json({ error: "今日或本月额度已用尽，请订阅或充值按量次数。", quotaSnapshot: quotaBefore }, { status: 402 });
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
     if (!(file instanceof File)) {
@@ -51,10 +61,9 @@ export async function POST(request: Request) {
       }, { status: 415 });
     }
 
-    const supabase = await getSupabaseAdmin();
-    const existing = supabase ? await findExistingUpload(hash) : null;
+    const existing = await findExistingUpload(hash, user.id);
     const duplicate = Boolean(existing);
-    const storagePath = existing?.storage_path ?? (supabase ? buildStoragePath(fileKind, hash, file.name) : null);
+    const storagePath = existing?.storage_path ?? `users/${user.id}/${buildStoragePath(fileKind, hash, file.name)}`;
 
     let profile;
     let logAnalysis;
@@ -70,35 +79,46 @@ export async function POST(request: Request) {
         status = logAnalysis.needsReview ? "needs_review" : "parsed";
       } catch (error) {
         logAnalysis = createNeedsReviewAnalysis(error instanceof Error ? error.message : "视觉解析失败");
-        status = "needs_review";
+        status = "failed";
       }
     }
 
     let uploadId = existing?.id ?? null;
     let persisted = false;
-    if (supabase) {
-      if (!existing && storagePath) {
-        await uploadOriginalFile(storagePath, buffer, file.type || "application/octet-stream");
-        const upload = await insertUploadRecord({
-          fileName: file.name,
-          hash,
-          fileKind,
-          mimeType: file.type || "application/octet-stream",
-          storagePath,
-          sizeBytes: file.size,
-          status
-        });
-        uploadId = upload.id;
-      }
-
-      if (uploadId && profile) {
-        await upsertRoastProfile(uploadId, profile);
-      }
-      if (uploadId && logAnalysis) {
-        await upsertRoastLog(uploadId, logAnalysis);
-      }
-      persisted = Boolean(uploadId);
+    if (!existing && storagePath) {
+      await uploadOriginalFile(storagePath, buffer, file.type || "application/octet-stream");
+      const upload = await insertUploadRecord({
+        ownerId: user.id,
+        fileName: file.name,
+        hash,
+        fileKind,
+        mimeType: file.type || "application/octet-stream",
+        storagePath,
+        sizeBytes: file.size,
+        status,
+        visibility: "private",
+        sourceScope: "user"
+      });
+      uploadId = upload.id;
     }
+
+    if (uploadId && profile) {
+      await upsertRoastProfile(uploadId, profile, user.id);
+    }
+    if (uploadId && logAnalysis) {
+      await upsertRoastLog(uploadId, logAnalysis, user.id);
+    }
+    persisted = Boolean(uploadId);
+
+    const shouldCharge = status !== "failed" && Boolean(profile || logAnalysis);
+    const quotaSnapshot = shouldCharge
+      ? await chargeSuccessfulAnalysis({
+        supabase,
+        userId: user.id,
+        uploadId,
+        metadata: { fileKind, duplicate, fileName: file.name }
+      })
+      : quotaBefore;
 
     return NextResponse.json<UploadAnalysisResult>({
       uploadId,
@@ -112,7 +132,8 @@ export async function POST(request: Request) {
       storagePath,
       persisted,
       profile,
-      logAnalysis
+      logAnalysis,
+      quotaSnapshot
     });
   } catch (error) {
     return NextResponse.json({

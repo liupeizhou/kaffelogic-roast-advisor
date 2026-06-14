@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireUserResponse } from "@/lib/auth";
 import { normalizeAnalysis } from "@/lib/diagnostics";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const denied = requireAdmin(request);
+  const { user, denied } = await requireUserResponse();
   if (denied) return denied;
 
   const supabase = await getSupabaseAdmin();
@@ -30,7 +30,8 @@ export async function POST(request: Request) {
         needs_review: false,
         parse_status: "parsed"
       })
-      .eq("upload_id", uploadId);
+      .eq("upload_id", uploadId)
+      .eq("owner_id", user.id);
 
     if (error) throw error;
     return NextResponse.json({ ok: true });

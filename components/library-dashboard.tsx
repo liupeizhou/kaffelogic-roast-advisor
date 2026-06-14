@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Button, Card, Col, Input, Row, Space, Spin, Statistic, Tag, Tooltip } from "antd";
 import { Database, FolderInput, RefreshCw, Search, UploadCloud } from "lucide-react";
 import AnimatedRoastCurve, { type AnimatedRoastProfile } from "@/components/animated-roast-curve";
+import OfficialProfileGuide from "@/components/official-profile-guide";
 import { adminHeaders, getStoredAdminToken, setStoredAdminToken } from "@/lib/admin-client";
+import type { Locale } from "@/lib/i18n";
 import type { RoastProfileRecord } from "@/lib/roast-persistence";
 
 type ProfilesResponse = {
@@ -31,7 +33,8 @@ type ImportResponse = {
 
 const DEFAULT_REFERENCE_ROOT = "/Volumes/Extreme SSD/01_下载归档_Downloads/kaffelogic项目";
 
-export default function LibraryDashboard() {
+export default function LibraryDashboard({ locale = "zh" }: { locale?: Locale }) {
+  const zh = locale === "zh";
   const [profiles, setProfiles] = useState<RoastProfileRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -42,21 +45,21 @@ export default function LibraryDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportResponse | null>(null);
 
-  async function loadProfiles() {
+  const loadProfiles = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await fetch("/api/library/profiles", { cache: "no-store" });
       const payload = await response.json() as ProfilesResponse;
-      if (!response.ok) throw new Error(payload.error ?? "读取曲线库失败。");
+      if (!response.ok) throw new Error(payload.error ?? (zh ? "读取曲线库失败。" : "Failed to load profile library."));
       setProfiles(payload.profiles);
       setSelectedId((current) => current ?? payload.profiles[0]?.id ?? null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "读取曲线库失败。");
+      setError(loadError instanceof Error ? loadError.message : (zh ? "读取曲线库失败。" : "Failed to load profile library."));
     } finally {
       setLoading(false);
     }
-  }
+  }, [zh]);
 
   async function importReferenceCurves() {
     setImporting(true);
@@ -69,11 +72,11 @@ export default function LibraryDashboard() {
         body: JSON.stringify({ rootPath })
       });
       const payload = await response.json() as ImportResponse;
-      if (!response.ok) throw new Error(payload.error ?? "导入参考曲线失败。");
+      if (!response.ok) throw new Error(payload.error ?? (zh ? "导入参考曲线失败。" : "Failed to import reference curves."));
       setImportResult(payload);
       await loadProfiles();
     } catch (importError) {
-      setError(importError instanceof Error ? importError.message : "导入参考曲线失败。");
+      setError(importError instanceof Error ? importError.message : (zh ? "导入参考曲线失败。" : "Failed to import reference curves."));
     } finally {
       setImporting(false);
     }
@@ -82,7 +85,7 @@ export default function LibraryDashboard() {
   useEffect(() => {
     setAdminToken(getStoredAdminToken());
     void loadProfiles();
-  }, []);
+  }, [loadProfiles]);
 
   const filteredProfiles = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -107,15 +110,15 @@ export default function LibraryDashboard() {
     <div className="library-workbench">
       <section className="library-topbar">
         <div>
-          <Tag color="green">曲线/案例库</Tag>
-          <h1>把参考曲线变成可查询、可解释、可动态预览的烘焙工件。</h1>
+          <Tag color="green">{zh ? "曲线/案例库" : "Profiles & cases"}</Tag>
+          <h1>{zh ? "把参考曲线变成可查询、可解释、可动态预览的烘焙工件。" : "Turn reference profiles into searchable, explainable and animated roast artifacts."}</h1>
         </div>
         <Space size={8}>
           <Tooltip title="重新读取 Supabase 曲线表">
             <Button icon={<RefreshCw size={16} />} onClick={loadProfiles} loading={loading} />
           </Tooltip>
           <Button type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceCurves} loading={importing}>
-            导入参考曲线
+            {zh ? "导入参考曲线" : "Import references"}
           </Button>
         </Space>
       </section>
@@ -126,20 +129,22 @@ export default function LibraryDashboard() {
           type={importResult.failed ? "warning" : "success"}
           showIcon
           className="library-alert"
-          message={`扫描 ${importResult.total} 条 .kpro，新增 ${importResult.imported}，跳过 ${importResult.skipped}，失败 ${importResult.failed}。`}
+          message={zh
+            ? `扫描 ${importResult.total} 条 .kpro，新增 ${importResult.imported}，跳过 ${importResult.skipped}，失败 ${importResult.failed}。`
+            : `Scanned ${importResult.total} .kpro files, imported ${importResult.imported}, skipped ${importResult.skipped}, failed ${importResult.failed}.`}
         />
       ) : null}
 
       <Row gutter={[16, 16]} className="library-stats">
-        <Col xs={12} md={6}><Card><Statistic title="曲线总数" value={profiles.length} prefix={<Database size={18} />} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="海拔标签" value={altitudeCount} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="日晒适配" value={naturalCount} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="水洗适配" value={washedCount} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title={zh ? "曲线总数" : "Profiles"} value={profiles.length} prefix={<Database size={18} />} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title={zh ? "海拔标签" : "Altitude tags"} value={altitudeCount} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title={zh ? "日晒适配" : "Natural fit"} value={naturalCount} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title={zh ? "水洗适配" : "Washed fit"} value={washedCount} /></Card></Col>
       </Row>
 
       <div className="library-grid">
         <aside className="library-sidebar">
-          <Card title={<span className="card-title"><FolderInput size={18} />参考曲线导入</span>}>
+          <Card title={<span className="card-title"><FolderInput size={18} />{zh ? "参考曲线导入" : "Reference import"}</span>}>
             <Space orientation="vertical" size={12} className="full-width">
               <Input.Password
                 value={adminToken}
@@ -151,20 +156,22 @@ export default function LibraryDashboard() {
               />
               <Input value={rootPath} onChange={(event) => setRootPath(event.target.value)} />
               <Button block type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceCurves} loading={importing}>
-                扫描并写入 Supabase
+                {zh ? "扫描并写入 Supabase" : "Scan and write to Supabase"}
               </Button>
-              <span className="muted">导入只处理 `.kpro`，自动跳过 `._*` 和 `.DS_Store`。重复文件按 hash 去重。</span>
+              <span className="muted">{zh ? "导入只处理 `.kpro`，自动跳过 `._*` 和 `.DS_Store`。重复文件按 hash 去重。" : "Only .kpro files are imported. ._* and .DS_Store are skipped; duplicates are de-duped by hash."}</span>
             </Space>
           </Card>
 
-          <Card title={<span className="card-title"><Search size={18} />曲线索引</span>}>
+          <Card title={<span className="card-title"><Search size={18} />{zh ? "曲线索引" : "Profile index"}</span>}>
             <Space orientation="vertical" size={12} className="full-width">
-              <Input placeholder="搜索名称、处理法、设计者" value={query} onChange={(event) => setQuery(event.target.value)} />
+              <Input placeholder={zh ? "搜索名称、处理法、设计者" : "Search name, process, designer"} value={query} onChange={(event) => setQuery(event.target.value)} />
               <div className="profile-list">
                 {loading ? <Spin /> : null}
                 {!loading && !filteredProfiles.length ? (
                   <div className="empty-profile-list">
-                    暂无 Supabase 曲线。右侧仍显示演示曲线。若刚开始配置，请先在后台设置 Supabase URL / service role key，并执行 migration。
+                    {zh
+                      ? "暂无 Supabase 曲线。右侧仍显示演示曲线。若刚开始配置，请先在后台设置 Supabase URL / service role key，并执行 migration。"
+                      : "No Supabase profiles yet. The demo curve remains visible. Configure Supabase URL / service role key and run migrations first."}
                   </div>
                 ) : null}
                 {filteredProfiles.map((profile) => (
@@ -185,18 +192,30 @@ export default function LibraryDashboard() {
 
         <main className="library-main">
           <AnimatedRoastCurve profile={selectedProfile as AnimatedRoastProfile | null} />
-          <Card className="profile-detail-card" title="曲线解析字段">
+          <OfficialProfileGuide
+            locale={locale}
+            compact
+            profile={selectedProfile ? {
+              name: selectedProfile.display_name ?? selectedProfile.short_name,
+              description: selectedProfile.description,
+              processFit: selectedProfile.process_fit,
+              expectedColourChangeTemp: selectedProfile.expected_colour_change_temp,
+              expectedFirstCrackTemp: selectedProfile.expected_first_crack_temp,
+              roastCurvePoints: selectedProfile.roast_curve_points
+            } : null}
+          />
+          <Card className="profile-detail-card" title={zh ? "曲线解析字段" : "Parsed profile fields"}>
             {selectedProfile ? (
               <div className="detail-grid">
-                <Detail label="文件名" value={selectedProfile.file_name} />
-                <Detail label="设计者" value={selectedProfile.designer || "未标注"} />
-                <Detail label="推荐 Level" value={selectedProfile.recommended_level ?? "N/A"} />
-                <Detail label="预计一爆温度" value={selectedProfile.expected_first_crack_temp ? `${selectedProfile.expected_first_crack_temp} C` : "N/A"} />
-                <Detail label="温度点数" value={selectedProfile.roast_curve_points.length} />
-                <Detail label="风速点数" value={selectedProfile.fan_curve_points.length} />
+                <Detail label={zh ? "文件名" : "File name"} value={selectedProfile.file_name} />
+                <Detail label={zh ? "设计者" : "Designer"} value={selectedProfile.designer || (zh ? "未标注" : "Unspecified")} />
+                <Detail label={zh ? "推荐 Level" : "Recommended level"} value={selectedProfile.recommended_level ?? "N/A"} />
+                <Detail label={zh ? "预计一爆温度" : "Expected FC"} value={selectedProfile.expected_first_crack_temp ? `${selectedProfile.expected_first_crack_temp} C` : "N/A"} />
+                <Detail label={zh ? "温度点数" : "Temperature points"} value={selectedProfile.roast_curve_points.length} />
+                <Detail label={zh ? "风速点数" : "Fan points"} value={selectedProfile.fan_curve_points.length} />
               </div>
             ) : (
-              <span className="muted">连接 Supabase 并导入 `.kpro` 后，这里会显示真实解析字段。</span>
+              <span className="muted">{zh ? "连接 Supabase 并导入 `.kpro` 后，这里会显示真实解析字段。" : "Connect Supabase and import .kpro files to show parsed fields here."}</span>
             )}
           </Card>
         </main>

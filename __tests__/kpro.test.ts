@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectKpro, parseKpro } from "@/lib/kpro";
+import { detectKpro, parseKpro, serializeKpro } from "@/lib/kpro";
 
 const SAMPLE_KPRO = `profile_short_name:Geisha Washed
 profile_designer:C Lab Roastery Ltd.
@@ -30,5 +30,21 @@ describe("parseKpro", () => {
 
   it("detects kpro content even if the extension is missing", () => {
     expect(detectKpro("profile.txt", SAMPLE_KPRO)).toBe(true);
+  });
+
+  it("serializes edited profiles without losing raw fields", () => {
+    const parsed = parseKpro(SAMPLE_KPRO, "Geisha_Washed.kpro");
+    const serialized = serializeKpro({
+      ...parsed,
+      shortName: "Edited Geisha",
+      recommendedLevel: 3.1,
+      rawFields: { ...parsed.rawFields, custom_note: "keep me" }
+    });
+    const reparsed = parseKpro(serialized, "Edited.kpro");
+
+    expect(reparsed.shortName).toBe("Edited Geisha");
+    expect(reparsed.recommendedLevel).toBe(3.1);
+    expect(reparsed.rawFields.custom_note).toBe("keep me");
+    expect(reparsed.roastCurvePoints.length).toBe(parsed.roastCurvePoints.length);
   });
 });

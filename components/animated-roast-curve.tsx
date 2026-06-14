@@ -3,6 +3,7 @@
 import { useId, useMemo, type ReactNode } from "react";
 import { Activity, Fan, Flame, Gauge, TimerReset } from "lucide-react";
 import { Tag } from "antd";
+import { formatRoastTime, getOfficialProfileInsight } from "@/lib/kaffelogic-official";
 import type { CurvePoint } from "@/lib/types";
 
 export type AnimatedRoastProfile = {
@@ -64,8 +65,19 @@ export default function AnimatedRoastCurve({ profile }: AnimatedRoastCurveProps)
   const tempPoints = activeProfile.roast_curve_points ?? EMPTY_CURVE_POINTS;
   const fanPoints = activeProfile.fan_curve_points ?? EMPTY_CURVE_POINTS;
   const geometry = useMemo(
-    () => createGeometry(tempPoints, fanPoints, activeProfile.expected_first_crack_temp ?? null),
-    [tempPoints, fanPoints, activeProfile.expected_first_crack_temp]
+    () => createGeometry(tempPoints, fanPoints, activeProfile.expected_first_crack_temp ?? null, activeProfile.expected_colour_change_temp ?? null),
+    [tempPoints, fanPoints, activeProfile.expected_first_crack_temp, activeProfile.expected_colour_change_temp]
+  );
+  const insight = useMemo(
+    () => getOfficialProfileInsight({
+      name: activeProfile.display_name ?? activeProfile.short_name,
+      description: activeProfile.description,
+      processFit: activeProfile.process_fit,
+      expectedColourChangeTemp: activeProfile.expected_colour_change_temp,
+      expectedFirstCrackTemp: activeProfile.expected_first_crack_temp,
+      roastCurvePoints: tempPoints
+    }),
+    [activeProfile, tempPoints]
   );
   const endTemp = tempPoints.at(-1)?.value ?? null;
   const totalTime = Math.max(tempPoints.at(-1)?.timeSeconds ?? 0, fanPoints.at(-1)?.timeSeconds ?? 0);
@@ -124,6 +136,13 @@ export default function AnimatedRoastCurve({ profile }: AnimatedRoastCurveProps)
           <text x="58" y="38" fill="#8da595" fontSize="12" fontWeight="700">KAFFELOGIC PROFILE TRACE</text>
           <text x="830" y="38" fill="#8da595" fontSize="12" textAnchor="end">{formatTime(totalTime)}</text>
 
+          {geometry.phaseBands.map((band) => (
+            <g key={band.key}>
+              <rect x={band.x} y="48" width={band.width} height="318" fill={band.fill} opacity="0.13" />
+              <text x={band.x + 10} y="358" fill="#bfd1c5" fontSize="11" fontWeight="700">{band.label}</text>
+            </g>
+          ))}
+
           {geometry.tempPath ? (
             <>
               <path d={geometry.tempPath} fill="none" stroke="#1f2b23" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
@@ -169,10 +188,17 @@ export default function AnimatedRoastCurve({ profile }: AnimatedRoastCurveProps)
             </>
           ) : null}
 
-          {activeProfile.expected_first_crack_temp && geometry.firstCrackY ? (
+          {geometry.colourChangeX ? (
             <g>
-              <line x1="58" x2="928" y1={geometry.firstCrackY} y2={geometry.firstCrackY} stroke="#f59e0b" strokeWidth="1.2" strokeDasharray="6 8" opacity="0.8" />
-              <text x="70" y={geometry.firstCrackY - 8} fill="#f8d687" fontSize="12">Expected FC {Math.round(activeProfile.expected_first_crack_temp)} C</text>
+              <line x1={geometry.colourChangeX} x2={geometry.colourChangeX} y1="48" y2="366" stroke="#22c55e" strokeWidth="1.2" strokeDasharray="4 7" opacity="0.75" />
+              <text x={geometry.colourChangeX + 8} y="68" fill="#b9f6ca" fontSize="12">Colour {formatRoastTime(insight.colourChangeSeconds)}</text>
+            </g>
+          ) : null}
+
+          {geometry.firstCrackX ? (
+            <g>
+              <line x1={geometry.firstCrackX} x2={geometry.firstCrackX} y1="48" y2="366" stroke="#f59e0b" strokeWidth="1.2" strokeDasharray="6 8" opacity="0.85" />
+              <text x={geometry.firstCrackX + 8} y="88" fill="#f8d687" fontSize="12">FC {formatRoastTime(insight.firstCrackSeconds)}</text>
             </g>
           ) : null}
 
@@ -190,6 +216,7 @@ export default function AnimatedRoastCurve({ profile }: AnimatedRoastCurveProps)
         <Metric icon={<Flame size={18} />} label="Expected FC" value={formatNumber(activeProfile.expected_first_crack_temp, "N/A", " C")} />
         <Metric icon={<TimerReset size={18} />} label="Duration" value={formatTime(totalTime)} />
         <Metric icon={<Fan size={18} />} label="End temp" value={formatNumber(endTemp, "N/A", " C")} />
+        <Metric icon={<Activity size={18} />} label="DTR" value={insight.developmentRatio === null ? "N/A" : `${insight.developmentRatio.toFixed(1)}%`} />
       </div>
     </section>
   );
@@ -207,7 +234,7 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
   );
 }
 
-function createGeometry(tempPoints: CurvePoint[], fanPoints: CurvePoint[], expectedFirstCrack: number | null) {
+function createGeometry(tempPoints: CurvePoint[], fanPoints: CurvePoint[], expectedFirstCrack: number | null, expectedColourChange: number | null) {
   const width = 980;
   const height = 430;
   const padding = { left: 58, right: 52, top: 48, bottom: 64 };
@@ -221,11 +248,23 @@ function createGeometry(tempPoints: CurvePoint[], fanPoints: CurvePoint[], expec
   const maxTemp = Math.max(...tempValues, 230);
   const tempPath = pointsToPath(tempPoints, maxTime, minTemp, maxTemp, width, height, padding);
   const fanPath = pointsToPath(fanPoints, maxTime, 9000, 16000, width, height, padding);
+  const firstCrackSeconds = crossingTime(tempPoints, expectedFirstCrack);
+  const colourChangeSeconds = crossingTime(tempPoints, expectedColourChange);
+  const firstCrackX = firstCrackSeconds === null ? null : timeToX(firstCrackSeconds, maxTime, width, padding);
+  const colourChangeX = colourChangeSeconds === null ? null : timeToX(colourChangeSeconds, maxTime, width, padding);
+  const endX = width - padding.right;
 
   return {
     tempPath,
     fanPath,
-    firstCrackY: expectedFirstCrack ? valueToY(expectedFirstCrack, minTemp, maxTemp, height, padding) : null
+    firstCrackY: expectedFirstCrack ? valueToY(expectedFirstCrack, minTemp, maxTemp, height, padding) : null,
+    firstCrackX,
+    colourChangeX,
+    phaseBands: [
+      { key: "drying", label: "Drying", x: padding.left, width: Math.max((colourChangeX ?? padding.left) - padding.left, 0), fill: "#18b36a" },
+      { key: "maillard", label: "Maillard", x: colourChangeX ?? padding.left, width: Math.max((firstCrackX ?? endX) - (colourChangeX ?? padding.left), 0), fill: "#e2b94e" },
+      { key: "development", label: "Development", x: firstCrackX ?? endX, width: Math.max(endX - (firstCrackX ?? endX), 0), fill: "#f26735" }
+    ].filter((band) => band.width > 12)
   };
 }
 
@@ -258,6 +297,30 @@ function valueToY(
 ) {
   const range = Math.max(maxValue - minValue, 1);
   return height - padding.bottom - ((value - minValue) / range) * (height - padding.top - padding.bottom);
+}
+
+function timeToX(
+  seconds: number,
+  maxTime: number,
+  width: number,
+  padding: { left: number; right: number }
+) {
+  return padding.left + (seconds / Math.max(maxTime, 1)) * (width - padding.left - padding.right);
+}
+
+function crossingTime(points: CurvePoint[], target: number | null) {
+  if (!target || points.length < 2) return null;
+  const sorted = points.slice().sort((a, b) => a.timeSeconds - b.timeSeconds);
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previous = sorted[index - 1];
+    const current = sorted[index];
+    if ((previous.value <= target && current.value >= target) || (previous.value >= target && current.value <= target)) {
+      const span = current.value - previous.value;
+      if (!span) return current.timeSeconds;
+      return Math.round(previous.timeSeconds + ((target - previous.value) / span) * (current.timeSeconds - previous.timeSeconds));
+    }
+  }
+  return null;
 }
 
 function formatTime(seconds: number) {

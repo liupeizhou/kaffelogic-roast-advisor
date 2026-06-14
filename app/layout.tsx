@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import AntdProviders from "@/components/antd-providers";
-import AppShell from "@/components/app-shell";
 import "antd/dist/reset.css";
 import "./globals.css";
 
@@ -15,9 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN">
       <body>
         <AntdRegistry>
-          <AntdProviders>
-            <AppShell>{children}</AppShell>
-          </AntdProviders>
+          <AntdProviders>{children}</AntdProviders>
         </AntdRegistry>
       </body>
     </html>

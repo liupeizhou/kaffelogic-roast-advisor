@@ -10,6 +10,7 @@ export type RuntimeConfig = {
   aiProvider: "openai" | "siliconflow" | "custom";
   aiBaseUrl: string;
   aiApiKey: string;
+  aiTextModel: string;
   aiVisionModel: string;
 };
 
@@ -23,11 +24,14 @@ const ENV_FILE = ".env.local";
 const CONFIG_KEYS = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  "NEXT_PUBLIC_SITE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
   "SUPABASE_UPLOAD_BUCKET",
   "AI_PROVIDER",
   "AI_BASE_URL",
   "AI_API_KEY",
+  "AI_TEXT_MODEL",
   "AI_VISION_MODEL",
   "ADMIN_ACCESS_TOKEN",
   "OPENAI_API_KEY",
@@ -49,6 +53,7 @@ export async function getPublicRuntimeConfig(): Promise<PublicRuntimeConfig> {
     aiProvider: config.aiProvider,
     aiBaseUrl: config.aiBaseUrl,
     aiApiKeySet: Boolean(config.aiApiKey),
+    aiTextModel: config.aiTextModel,
     aiVisionModel: config.aiVisionModel
   };
 }
@@ -59,11 +64,13 @@ export async function updateRuntimeConfig(input: Partial<Record<string, string>>
 
   setIfPresent(next, "NEXT_PUBLIC_SUPABASE_URL", input.supabaseUrl);
   setIfPresent(next, "NEXT_PUBLIC_SUPABASE_ANON_KEY", input.supabaseAnonKey, true);
+  setIfPresent(next, "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", input.supabaseAnonKey, true);
   setIfPresent(next, "SUPABASE_SERVICE_ROLE_KEY", input.supabaseServiceRoleKey, true);
   setIfPresent(next, "SUPABASE_UPLOAD_BUCKET", input.supabaseUploadBucket);
   setIfPresent(next, "AI_PROVIDER", input.aiProvider);
   setIfPresent(next, "AI_BASE_URL", input.aiBaseUrl);
   setIfPresent(next, "AI_API_KEY", input.aiApiKey, true);
+  setIfPresent(next, "AI_TEXT_MODEL", input.aiTextModel);
   setIfPresent(next, "AI_VISION_MODEL", input.aiVisionModel);
 
   if (input.aiApiKey && !input.openAiApiKey) {
@@ -95,6 +102,7 @@ function configFromValues(values: Record<string, string>): RuntimeConfig {
     aiProvider,
     aiBaseUrl: values.AI_BASE_URL || (aiProvider === "siliconflow" ? "https://api.siliconflow.cn/v1" : "https://api.openai.com/v1"),
     aiApiKey: values.AI_API_KEY || values.OPENAI_API_KEY || "",
+    aiTextModel: values.AI_TEXT_MODEL || (aiProvider === "siliconflow" ? "Qwen/Qwen3-32B" : "gpt-4.1-mini"),
     aiVisionModel: values.AI_VISION_MODEL || values.OPENAI_VISION_MODEL || (aiProvider === "siliconflow" ? "Qwen/Qwen2.5-VL-72B-Instruct" : "gpt-4.1-mini")
   };
 }

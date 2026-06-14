@@ -1,12 +1,18 @@
 "use client";
 
 import { App, ConfigProvider, theme } from "antd";
+import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
+import { usePathname } from "next/navigation";
+import { stripLocale } from "@/lib/i18n";
 
 export default function AntdProviders({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const { locale } = stripLocale(pathname);
+
   return (
     <ConfigProvider
-      locale={zhCN}
+      locale={locale === "en" ? enUS : zhCN}
       theme={{
         algorithm: theme.defaultAlgorithm,
         token: {

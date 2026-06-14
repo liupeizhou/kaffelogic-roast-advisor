@@ -1,9 +1,5 @@
-import LibraryDashboard from "@/components/library-dashboard";
+import { redirect } from "next/navigation";
 
 export default function LibraryPage() {
-  return (
-    <div className="page wide-page">
-      <LibraryDashboard />
-    </div>
-  );
+  redirect("/zh/library");
 }
