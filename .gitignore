@@ -3,9 +3,11 @@ node_modules/
 dist/
 coverage/
 ops/
+.vercel/
 .env
 .env*.local
 *.log
 *.tsbuildinfo
 .DS_Store
 ._*
+.vercel
