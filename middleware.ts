@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DEFAULT_LOCALE, isLocale, type Locale } from "@/lib/i18n";
+import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware";
 
 const PROTECTED_PATHS = ["/upload", "/editor", "/account", "/admin"];
 
@@ -16,8 +17,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const response = NextResponse.next({ request });
-  const authenticated = request.cookies.getAll().some((cookie) => cookie.name.startsWith("sb-") && cookie.name.endsWith("-auth-token"));
+  const { supabase, response } = createSupabaseMiddlewareClient(request);
+  const authenticated = await hasAuthenticatedSession(supabase);
 
   const localizedPath = pathname.replace(`/${firstSegment}`, "") || "/";
   if (!authenticated && PROTECTED_PATHS.some((path) => localizedPath === path || localizedPath.startsWith(`${path}/`))) {
@@ -29,6 +30,12 @@ export async function middleware(request: NextRequest) {
 
   response.cookies.set("kaffelogic-locale", firstSegment, { path: "/", sameSite: "lax" });
   return response;
+}
+
+async function hasAuthenticatedSession(supabase: ReturnType<typeof createSupabaseMiddlewareClient>["supabase"]) {
+  if (!supabase) return false;
+  const { data, error } = await supabase.auth.getClaims();
+  return Boolean(!error && data?.claims?.sub);
 }
 
 function resolvePreferredLocale(request: NextRequest): Locale {
