@@ -96,7 +96,7 @@ function configFromValues(values: Record<string, string>): RuntimeConfig {
   const aiProvider = normalizeProvider(values.AI_PROVIDER);
   return {
     supabaseUrl: values.NEXT_PUBLIC_SUPABASE_URL ?? "",
-    supabaseAnonKey: values.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    supabaseAnonKey: values.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || values.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
     supabaseServiceRoleKey: values.SUPABASE_SERVICE_ROLE_KEY ?? "",
     supabaseUploadBucket: values.SUPABASE_UPLOAD_BUCKET || "kaffelogic-uploads",
     aiProvider,

@@ -13,8 +13,12 @@ export const dictionaries = {
       library: "曲线/案例库",
       editor: "曲线编辑器",
       account: "账户与额度",
+      adminHome: "管理概览",
+      adminLibrary: "曲线导入",
       users: "用户授权",
-      settings: "后台配置"
+      settings: "后台配置",
+      frontend: "客户前台",
+      admin: "管理后台"
     },
     actions: {
       upload: "上传分析",
@@ -60,7 +64,7 @@ export const dictionaries = {
       lede: "登录后上传 `.kpro` 或 Kaffelogic log 图片。成功分析会按 GMT+8 计入当日额度。",
       selectFile: "选择文件",
       analyze: "分析上传",
-      hint: "支持 .kpro 和 Kaffelogic log 图片，单文件最大 6MB。",
+      hint: "支持 .kpro、.klog 和 Kaffelogic log 图片，单文件最大 6MB。",
       quotaHint: "成功分析后扣减额度；失败和非法文件不扣。"
     },
     editor: {
@@ -93,8 +97,12 @@ export const dictionaries = {
       library: "Profiles & Cases",
       editor: "Curve Editor",
       account: "Account & Quota",
+      adminHome: "Admin Overview",
+      adminLibrary: "Profile Import",
       users: "User Grants",
-      settings: "Admin Settings"
+      settings: "Admin Settings",
+      frontend: "Customer App",
+      admin: "Admin Console"
     },
     actions: {
       upload: "Analyze Upload",
@@ -140,7 +148,7 @@ export const dictionaries = {
       lede: "Upload `.kpro` files or Kaffelogic log images after signing in. Successful analyses count against your GMT+8 daily quota.",
       selectFile: "Select file",
       analyze: "Analyze upload",
-      hint: "Supports .kpro and Kaffelogic log images, max 6MB per file.",
+      hint: "Supports .kpro, .klog and Kaffelogic log images, max 6MB per file.",
       quotaHint: "Only successful analyses consume quota; invalid or failed files do not."
     },
     editor: {

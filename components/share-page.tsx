@@ -33,7 +33,7 @@ export default function SharePageView({ locale, share }: { locale: Locale; share
             <small className="muted">{share.quote_source_note}</small>
           </Card>
           <Card>
-            <Space direction="vertical" size={8}>
+            <Space orientation="vertical" size={8}>
               <span>{curve.short_name ?? curve.title}</span>
               <span>Level {curve.recommended_level ?? "N/A"} · FC {curve.expected_first_crack_temp ?? "N/A"} C</span>
               <Link href={`/api/share-image/${share.slug}?template=${share.template}`}>{t.share.image}</Link>

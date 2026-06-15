@@ -4,7 +4,9 @@ import { getPublicRuntimeConfig, updateRuntimeConfig } from "@/lib/runtime-confi
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
   return NextResponse.json(await getPublicRuntimeConfig());
 }
 

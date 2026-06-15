@@ -28,7 +28,7 @@ export default function OfficialProfileGuide({ locale, compact = false, profile 
   const zh = locale === "zh";
 
   return (
-    <Space direction="vertical" size={16} className="full-width">
+    <Space orientation="vertical" size={16} className="full-width">
       <Card className="official-guide-card">
         <div className="official-guide-head">
           <div>
@@ -65,7 +65,7 @@ export default function OfficialProfileGuide({ locale, compact = false, profile 
           {officialProfileFamilies.map((family) => (
             <Col xs={24} md={12} xl={8} key={family.key}>
               <Card className="profile-family-card" size="small">
-                <Space direction="vertical" size={10} className="full-width">
+                <Space orientation="vertical" size={10} className="full-width">
                   <span className="icon-title"><BookOpen size={17} />{family.name}</span>
                   <p>{zh ? family.intentZh : family.intentEn}</p>
                   <div className="family-tags">

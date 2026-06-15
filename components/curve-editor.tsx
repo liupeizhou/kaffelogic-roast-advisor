@@ -153,7 +153,7 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
   }
 
   return (
-    <Space direction="vertical" size={16} className="full-width">
+    <Space orientation="vertical" size={16} className="full-width">
       {message ? <Alert type="success" showIcon message={message} /> : null}
       {error ? <Alert type="error" showIcon message={error} /> : null}
       <Card>
@@ -210,7 +210,7 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
                 key: "points",
                 label: locale === "zh" ? "点位" : "Points",
                 children: (
-                  <Space direction="vertical" size={16} className="full-width">
+                  <Space orientation="vertical" size={16} className="full-width">
                     <PointEditor title={t.editor.tempCurve} points={profile.roastCurvePoints} onChange={(points) => setProfile({ ...profile, roastCurvePoints: points })} />
                     <PointEditor title={t.editor.fanCurve} points={profile.fanCurvePoints} onChange={(points) => setProfile({ ...profile, fanCurvePoints: points })} />
                   </Space>
@@ -231,7 +231,7 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
 
 function MetadataEditor({ profile, onChange }: { profile: KproProfile; onChange: (profile: KproProfile) => void }) {
   return (
-    <Space direction="vertical" size={12} className="full-width">
+    <Space orientation="vertical" size={12} className="full-width">
       <Input value={profile.shortName ?? ""} onChange={(event) => onChange({ ...profile, shortName: event.target.value })} placeholder="profile_short_name" />
       <Input value={profile.designer ?? ""} onChange={(event) => onChange({ ...profile, designer: event.target.value })} placeholder="profile_designer" />
       <Input.TextArea rows={5} value={profile.description ?? ""} onChange={(event) => onChange({ ...profile, description: event.target.value })} placeholder="profile_description" />
@@ -248,7 +248,7 @@ function MetadataEditor({ profile, onChange }: { profile: KproProfile; onChange:
 function PointEditor({ title, points, onChange }: { title: string; points: CurvePoint[]; onChange: (points: CurvePoint[]) => void }) {
   return (
     <Card size="small" title={title} extra={<Button size="small" icon={<Plus size={14} />} onClick={() => onChange([...points, { timeSeconds: (points.at(-1)?.timeSeconds ?? 0) + 30, value: points.at(-1)?.value ?? 0 }])} />}>
-      <Space direction="vertical" size={8} className="full-width">
+      <Space orientation="vertical" size={8} className="full-width">
         {points.map((point, index) => (
           <Row key={index} gutter={8} align="middle">
             <Col span={9}><InputNumber className="full-width" value={point.timeSeconds} onChange={(value) => onChange(updatePoint(points, index, { timeSeconds: Number(value ?? 0) }))} /></Col>
@@ -269,6 +269,15 @@ function EditableCurve({ points, minValue, maxValue, color, onChange }: {
   onChange: (points: CurvePoint[]) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  if (!points.length) {
+    return (
+      <svg ref={svgRef} viewBox="0 0 720 240" width="100%" height="240" className="editable-curve">
+        <rect x="0" y="0" width="720" height="240" rx="8" fill="#fbfcf9" />
+        {[0, 1, 2, 3].map((tick) => <line key={tick} x1="30" x2="690" y1={20 + tick * 60} y2={20 + tick * 60} stroke="#d8ddd7" />)}
+        <text x="360" y="124" textAnchor="middle" fill="#6d7b70" fontSize="15">No curve points</text>
+      </svg>
+    );
+  }
   const maxTime = Math.max(...points.map((point) => point.timeSeconds), 1);
   const path = points.map((point, index) => {
     const { x, y } = pointToXY(point, maxTime, minValue, maxValue);
@@ -290,6 +299,12 @@ function EditableCurve({ points, minValue, maxValue, color, onChange }: {
     }));
   }
 
+  function release(event: React.PointerEvent<SVGCircleElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   return (
     <svg ref={svgRef} viewBox="0 0 720 240" width="100%" height="240" className="editable-curve">
       <rect x="0" y="0" width="720" height="240" rx="8" fill="#fbfcf9" />
@@ -297,7 +312,20 @@ function EditableCurve({ points, minValue, maxValue, color, onChange }: {
       <path d={path} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
       {points.map((point, index) => {
         const { x, y } = pointToXY(point, maxTime, minValue, maxValue);
-        return <circle key={index} cx={x} cy={y} r="7" fill="#fff" stroke={color} strokeWidth="3" onPointerMove={(event) => event.buttons === 1 ? drag(index, event) : undefined} />;
+        return (
+          <circle
+            key={index}
+            cx={x}
+            cy={y}
+            r="7"
+            fill="#fff"
+            stroke={color}
+            strokeWidth="3"
+            onPointerMove={(event) => event.buttons === 1 ? drag(index, event) : undefined}
+            onPointerUp={release}
+            onPointerCancel={release}
+          />
+        );
       })}
     </svg>
   );
@@ -326,13 +354,13 @@ function curveToProfile(curve: NonNullable<CurveResponse["curve"]>): KproProfile
     shortName: curve.short_name,
     designer: curve.designer,
     description: curve.description,
-    schemaVersion: curve.raw_fields.profile_schema_version ?? "1.4",
+    schemaVersion: curve.raw_fields?.profile_schema_version ?? "1.4",
     recommendedLevel: curve.recommended_level,
     expectedFirstCrackTemp: curve.expected_first_crack_temp,
     expectedColourChangeTemp: curve.expected_colour_change_temp,
     roastLevels: curve.roast_levels,
     roastCurvePoints: curve.roast_curve_points,
     fanCurvePoints: curve.fan_curve_points,
-    rawFields: curve.raw_fields
+    rawFields: curve.raw_fields ?? {}
   };
 }

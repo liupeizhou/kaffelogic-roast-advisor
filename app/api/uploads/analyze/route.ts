@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUserResponse } from "@/lib/auth";
 import { createNeedsReviewAnalysis } from "@/lib/diagnostics";
+import { analyzeKlog, parseKlog } from "@/lib/klog";
 import { parseKpro } from "@/lib/kpro";
 import { analyzeRoastLogImage } from "@/lib/openai-vision";
 import { chargeSuccessfulAnalysis, getQuotaSnapshot } from "@/lib/quota";
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
     const storagePath = existing?.storage_path ?? `users/${user.id}/${buildStoragePath(fileKind, hash, file.name)}`;
 
     let profile;
+    let klog;
     let logAnalysis;
     let status: ParseStatus = "parsed";
 
@@ -73,6 +75,11 @@ export async function POST(request: Request) {
       const text = buffer.toString("utf8");
       profile = parseKpro(text, file.name);
       if (!profile.shortName && !profile.roastCurvePoints.length) status = "needs_review";
+    } else if (fileKind === "klog") {
+      const text = buffer.toString("utf8");
+      klog = parseKlog(text, file.name);
+      logAnalysis = analyzeKlog(klog);
+      status = logAnalysis.needsReview ? "needs_review" : "parsed";
     } else if (fileKind === "log_image") {
       try {
         logAnalysis = await analyzeRoastLogImage(toDataUrl(buffer, file.type || "image/png"));
@@ -110,7 +117,7 @@ export async function POST(request: Request) {
     }
     persisted = Boolean(uploadId);
 
-    const shouldCharge = status !== "failed" && Boolean(profile || logAnalysis);
+    const shouldCharge = status !== "failed" && Boolean(profile || klog || logAnalysis);
     const quotaSnapshot = shouldCharge
       ? await chargeSuccessfulAnalysis({
         supabase,
@@ -132,6 +139,7 @@ export async function POST(request: Request) {
       storagePath,
       persisted,
       profile,
+      klog,
       logAnalysis,
       quotaSnapshot
     });

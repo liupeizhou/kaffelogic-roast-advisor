@@ -26,7 +26,7 @@ export default async function RecommendPage({ params }: { params: Promise<{ loca
       <Row gutter={[16, 16]} className="recommend-flow">
         <Col xs={24} lg={8}>
           <Card>
-            <Space direction="vertical" size={12}>
+            <Space orientation="vertical" size={12}>
               <span className="icon-title"><Coffee size={18} />{zh ? "1. 先匹配豆子意图" : "1. Match coffee intent"}</span>
               <p>{zh ? "水洗/日晒优先进入 KL Washed 或 KL Natural；低因、Robusta、Super Dark、Cupping 不应混作普通曲线。" : "Washed and natural coffees should start with KL Washed or KL Natural. Decaf, Robusta, Super Dark and Cupping should not be treated as generic profiles."}</p>
             </Space>
@@ -34,7 +34,7 @@ export default async function RecommendPage({ params }: { params: Promise<{ loca
         </Col>
         <Col xs={24} lg={8}>
           <Card>
-            <Space direction="vertical" size={12}>
+            <Space orientation="vertical" size={12}>
               <span className="icon-title"><SlidersHorizontal size={18} />{zh ? "2. 再决定调哪里" : "2. Decide what to adjust"}</span>
               <p>{zh ? "只是偏浅/偏深，调 level；风味方向不对，换 profile；曲线跟随异常，再看 bean curve / fan curve。" : "If it is only light or dark, adjust level. If the flavor direction is wrong, switch profile. If tracking is abnormal, inspect bean and fan curves."}</p>
             </Space>
@@ -42,7 +42,7 @@ export default async function RecommendPage({ params }: { params: Promise<{ loca
         </Col>
         <Col xs={24} lg={8}>
           <Card>
-            <Space direction="vertical" size={12}>
+            <Space orientation="vertical" size={12}>
               <span className="icon-title"><ArrowRight size={18} />{zh ? "3. 用 log 关闭循环" : "3. Close the loop with logs"}</span>
               <p>{zh ? "记录转黄、一爆、DTR、结束点和杯测反馈。下一次推荐必须引用这些已确认案例，而不是只看生豆描述。" : "Record color change, first crack, DTR, end point and tasting feedback. The next recommendation should cite confirmed cases, not only green coffee descriptors."}</p>
             </Space>

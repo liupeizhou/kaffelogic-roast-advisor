@@ -29,7 +29,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         <div style={{ fontSize: 34, lineHeight: 1.35, opacity: 0.86 }}>{share.summary}</div>
         <svg width="1040" height="460" viewBox="0 0 1040 460">
           <rect x="0" y="0" width="1040" height="460" rx="30" fill={panelFor(template)} />
-          <path d={tempPath} fill="none" stroke={accentFor(template)} strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+          {tempPath ? (
+            <path d={tempPath} fill="none" stroke={accentFor(template)} strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+          ) : (
+            <text x="80" y="240" fill={accentFor(template)} fontSize="34">No temperature curve points</text>
+          )}
         </svg>
         <div style={{ display: "flex", gap: "24px" }}>
           <Metric label="Level" value={String(curve.recommended_level ?? "N/A")} />

@@ -1,3 +1,4 @@
+import { getRuntimeConfig } from "@/lib/runtime-config";
 import type { CurveDocumentRecord } from "@/lib/roast-persistence";
 
 export type ShareCopy = {
@@ -33,9 +34,10 @@ const QUOTES = [
 
 export async function generateShareCopy(curve: CurveDocumentRecord): Promise<ShareCopy> {
   const deterministic = buildDeterministicCopy(curve);
-  const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
-  const baseUrl = process.env.AI_BASE_URL || "https://api.siliconflow.cn/v1";
-  const model = process.env.AI_TEXT_MODEL || process.env.AI_VISION_MODEL;
+  const config = await getRuntimeConfig();
+  const apiKey = config.aiApiKey;
+  const baseUrl = config.aiBaseUrl;
+  const model = config.aiTextModel;
   if (!apiKey || !model) return deterministic;
 
   try {

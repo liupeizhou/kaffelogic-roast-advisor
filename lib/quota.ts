@@ -89,6 +89,9 @@ export async function chargeSuccessfulAnalysis(input: {
   uploadId: string | null;
   metadata?: Record<string, unknown>;
 }) {
+  const rpcSnapshot = await chargeWithRpc(input);
+  if (rpcSnapshot) return rpcSnapshot;
+
   const snapshot = await getQuotaSnapshot(input.supabase, input.userId);
   if (!snapshot.canAnalyze || snapshot.nextChargeSource === "none") {
     throw new Error("今日或本月额度已用尽，请订阅或充值按量次数。");
@@ -119,6 +122,24 @@ export async function chargeSuccessfulAnalysis(input: {
   }
 
   return getQuotaSnapshot(input.supabase, input.userId);
+}
+
+async function chargeWithRpc(input: {
+  supabase: SupabaseClient;
+  userId: string;
+  uploadId: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<QuotaSnapshot | null> {
+  const { data, error } = await input.supabase.rpc("charge_upload_analysis", {
+    p_user_id: input.userId,
+    p_upload_id: input.uploadId,
+    p_metadata: input.metadata ?? {}
+  });
+  if (error) {
+    if (error.code === "PGRST202" || error.message.includes("charge_upload_analysis")) return null;
+    throw error;
+  }
+  return normalizeQuotaSnapshot(data);
 }
 
 function chooseChargeSource(input: {
@@ -176,4 +197,34 @@ async function getCreditBalance(supabase: SupabaseClient, userId: string): Promi
     .eq("user_id", userId);
   if (error) throw error;
   return Math.max((data ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0), 0);
+}
+
+function normalizeQuotaSnapshot(value: unknown): QuotaSnapshot {
+  const source = (value ?? {}) as Partial<Record<keyof QuotaSnapshot, unknown>>;
+  const planCode = source.planCode === "balanced" || source.planCode === "pro" ? source.planCode : "free";
+  const nextChargeSource = source.nextChargeSource === "subscription" || source.nextChargeSource === "credits" || source.nextChargeSource === "free"
+    ? source.nextChargeSource
+    : "none";
+  return {
+    planCode,
+    dailyLimit: toNumber(source.dailyLimit),
+    monthlyLimit: toNumber(source.monthlyLimit),
+    dailyUsed: toNumber(source.dailyUsed),
+    monthlyUsed: toNumber(source.monthlyUsed),
+    dailyRemaining: toNumber(source.dailyRemaining),
+    monthlyRemaining: toNumber(source.monthlyRemaining),
+    freeDailyLimit: toNumber(source.freeDailyLimit),
+    freeDailyUsed: toNumber(source.freeDailyUsed),
+    freeDailyRemaining: toNumber(source.freeDailyRemaining),
+    creditBalance: toNumber(source.creditBalance),
+    usageDay: typeof source.usageDay === "string" ? source.usageDay : "",
+    usageMonth: typeof source.usageMonth === "string" ? source.usageMonth : "",
+    nextChargeSource,
+    canAnalyze: Boolean(source.canAnalyze)
+  };
+}
+
+function toNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }

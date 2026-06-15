@@ -93,7 +93,7 @@ export default function EmailOtpLogin({ locale }: { locale: Locale }) {
             />
           </Form.Item>
         ) : null}
-        <Space direction="vertical" size={12} className="full-width">
+        <Space orientation="vertical" size={12} className="full-width">
           {sent ? <Alert type="success" showIcon message={t.login.sent} /> : null}
           {error ? <Alert type="error" showIcon message={error} /> : null}
           <Button block type="primary" size="large" htmlType="submit" loading={loading}>

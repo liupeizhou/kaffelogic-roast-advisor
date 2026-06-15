@@ -11,6 +11,7 @@ export function hashBuffer(buffer: Buffer): string {
 export function classifyUpload(fileName: string, mimeType: string, firstTextBytes?: string): UploadFileKind {
   const lower = fileName.toLowerCase();
   if (lower.startsWith("._") || lower === ".ds_store") return "unknown";
+  if (lower.endsWith(".klog") || (firstTextBytes?.includes("log_file_name:") && firstTextBytes.includes("time\t"))) return "klog";
   if (lower.endsWith(".kpro") || firstTextBytes?.includes("profile_short_name:") || firstTextBytes?.includes("roast_profile:")) return "kpro";
   if (IMAGE_MIME_TYPES.has(mimeType) || /\.(png|jpe?g|webp|heic|heif)$/i.test(fileName)) return "log_image";
   return "unknown";

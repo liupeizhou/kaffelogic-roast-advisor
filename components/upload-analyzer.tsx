@@ -30,7 +30,7 @@ export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
   }
 
   const uploadProps: UploadProps = {
-    accept: ".kpro,image/png,image/jpeg,image/webp,image/heic,image/heif",
+    accept: ".kpro,.klog,image/png,image/jpeg,image/webp,image/heic,image/heif",
     maxCount: 1,
     beforeUpload: (nextFile) => {
       onFileChange(nextFile);
@@ -143,6 +143,7 @@ function AnalysisResult({ result, onConfirm, confirming }: {
             </Row>
           ) : null}
           {result.profile ? <KproResult result={result} /> : null}
+          {result.klog ? <KlogResult result={result} /> : null}
           {result.logAnalysis ? <LogResult analysis={result.logAnalysis} uploadId={result.uploadId} onConfirm={onConfirm} confirming={confirming} /> : null}
         </Space>
       </Col>
@@ -159,6 +160,47 @@ function AnalysisResult({ result, onConfirm, confirming }: {
         </Card>
       </Col>
     </Row>
+  );
+}
+
+function KlogResult({ result }: { result: UploadAnalysisResult }) {
+  const klog = result.klog;
+  if (!klog) return null;
+
+  const downsampledMean = downsample(klog.samples, 180).map((sample) => ({
+    timeSeconds: sample.timeSeconds,
+    value: sample.meanTempC ?? 0
+  })).filter((point) => point.value > 0);
+  const downsampledProfile = downsample(klog.samples, 180).map((sample) => ({
+    timeSeconds: sample.timeSeconds,
+    value: sample.profileTempC ?? 0
+  })).filter((point) => point.value > 0);
+  const downsampledPower = downsample(klog.samples, 180).map((sample) => ({
+    timeSeconds: sample.timeSeconds,
+    value: sample.powerKw === null ? 0 : sample.powerKw * 100
+  }));
+
+  return (
+    <>
+      <Card title="KLOG 实际烘焙记录">
+        <Descriptions column={1} bordered size="small" items={[
+          { key: "profile", label: "使用 Profile", children: klog.metadata.profileShortName ?? klog.metadata.profileFileName ?? "未识别" },
+          { key: "date", label: "烘焙时间", children: klog.metadata.roastDate ?? "未记录" },
+          { key: "level", label: "实际 Level", children: klog.metadata.roastingLevel ?? "未记录" },
+          { key: "device", label: "设备/固件", children: `${klog.metadata.deviceModel ?? "-"} / ${klog.metadata.firmwareVersion ?? "-"}` },
+          { key: "samples", label: "采样点", children: klog.metrics.sampleCount },
+          { key: "end", label: "结束点", children: `${formatSeconds(klog.metrics.roastEndTimeSeconds)} / ${formatNumber(klog.metrics.roastEndTemperatureC)}°C` },
+          { key: "tracking", label: "跟线误差", children: `avg ${formatNumber(klog.metrics.avgAbsTrackingErrorC)}°C / max ${formatNumber(klog.metrics.maxAbsTrackingErrorC)}°C` }
+        ]} />
+      </Card>
+      <Card title="实际曲线对比">
+        <Space orientation="vertical" size={16} className="full-width">
+          <CurveChart title="实际 mean temp" points={downsampledMean} color="#f26735" unit="°C" />
+          <CurveChart title="目标 profile" points={downsampledProfile} color="#2563eb" unit="°C" />
+          <CurveChart title="Power x100" points={downsampledPower} color="#176B42" />
+        </Space>
+      </Card>
+    </>
   );
 }
 
@@ -241,4 +283,22 @@ function formatMetric(metric: { time?: string | null; temperatureC?: number | nu
   const time = metric.time ?? "-";
   const temp = metric.temperatureC ? `${metric.temperatureC}°C` : "-";
   return `${time} / ${temp}`;
+}
+
+function formatSeconds(seconds: number | null) {
+  if (seconds === null || !Number.isFinite(seconds)) return "N/A";
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${rest}`;
+}
+
+function formatNumber(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return "N/A";
+  return value.toFixed(1);
+}
+
+function downsample<T>(items: T[], maxItems: number) {
+  if (items.length <= maxItems) return items;
+  const stride = Math.ceil(items.length / maxItems);
+  return items.filter((_, index) => index % stride === 0);
 }

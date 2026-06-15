@@ -47,4 +47,16 @@ describe("parseKpro", () => {
     expect(reparsed.rawFields.custom_note).toBe("keep me");
     expect(reparsed.roastCurvePoints.length).toBe(parsed.roastCurvePoints.length);
   });
+
+  it("skips malformed curve pairs without shifting subsequent time/value pairs", () => {
+    const parsed = parseKpro(`profile_short_name:Bad Pair
+roast_profile:0,20,60,9999,120,150
+fan_profile:0,14000
+`, "bad.kpro");
+
+    expect(parsed.roastCurvePoints).toEqual([
+      { timeSeconds: 0, value: 20 },
+      { timeSeconds: 120, value: 150 }
+    ]);
+  });
 });

@@ -37,7 +37,7 @@ export default function AdminUserGrants({ locale }: { locale: Locale }) {
 
   return (
     <Card>
-      <Space direction="vertical" size={14} className="full-width">
+      <Space orientation="vertical" size={14} className="full-width">
         {message ? <Alert type="success" showIcon message={message} /> : null}
         {error ? <Alert type="error" showIcon message={error} /> : null}
         <Input.Password

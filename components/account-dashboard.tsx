@@ -28,7 +28,7 @@ export default function AccountDashboard({ locale }: { locale: Locale }) {
 
   const quota = payload?.quotaSnapshot;
   return (
-    <Space direction="vertical" size={16} className="full-width">
+    <Space orientation="vertical" size={16} className="full-width">
       {error ? <Alert type="warning" showIcon message={error} /> : null}
       <Card>
         <Space size={10} wrap>

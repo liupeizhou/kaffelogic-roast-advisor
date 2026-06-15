@@ -6,18 +6,30 @@ import { Alert, Button, Card, Col, Input, Row, Select, Space } from "antd";
 import { adminHeaders, getStoredAdminToken, setStoredAdminToken } from "@/lib/admin-client";
 import type { PublicRuntimeConfig } from "@/lib/runtime-config";
 
-const SILICONFLOW_MODELS = [
+const SILICONFLOW_VISION_MODELS = [
   "Qwen/Qwen2.5-VL-72B-Instruct",
   "Qwen/Qwen2.5-VL-32B-Instruct",
   "deepseek-ai/deepseek-vl2",
   "THUDM/GLM-4.1V-9B-Thinking"
 ];
 
-const OPENAI_MODELS = [
+const SILICONFLOW_TEXT_MODELS = [
+  "Qwen/Qwen3-32B",
+  "Qwen/Qwen3-14B",
+  "deepseek-ai/DeepSeek-V3.1"
+];
+
+const OPENAI_VISION_MODELS = [
   "gpt-4.1-mini",
   "gpt-4.1",
   "gpt-4o-mini",
   "gpt-4o"
+];
+
+const OPENAI_TEXT_MODELS = [
+  "gpt-4.1-mini",
+  "gpt-4.1",
+  "gpt-4o-mini"
 ];
 
 type FormState = {
@@ -28,6 +40,7 @@ type FormState = {
   aiProvider: "openai" | "siliconflow" | "custom";
   aiBaseUrl: string;
   aiApiKey: string;
+  aiTextModel: string;
   aiVisionModel: string;
 };
 
@@ -40,6 +53,7 @@ export default function SettingsPanel() {
     aiProvider: "siliconflow",
     aiBaseUrl: "https://api.siliconflow.cn/v1",
     aiApiKey: "",
+    aiTextModel: "Qwen/Qwen3-32B",
     aiVisionModel: "Qwen/Qwen2.5-VL-72B-Instruct"
   });
   const [current, setCurrent] = useState<PublicRuntimeConfig | null>(null);
@@ -50,8 +64,9 @@ export default function SettingsPanel() {
   const [adminToken, setAdminToken] = useState("");
 
   useEffect(() => {
-    setAdminToken(getStoredAdminToken());
-    fetch("/api/settings")
+    const storedToken = getStoredAdminToken();
+    setAdminToken(storedToken);
+    fetch("/api/settings", { headers: adminHeaders(storedToken) })
       .then((response) => response.json())
       .then((config: PublicRuntimeConfig) => {
         setCurrent(config);
@@ -61,6 +76,7 @@ export default function SettingsPanel() {
           supabaseUploadBucket: config.supabaseUploadBucket,
           aiProvider: config.aiProvider,
           aiBaseUrl: config.aiBaseUrl,
+          aiTextModel: config.aiTextModel,
           aiVisionModel: config.aiVisionModel
         }));
       })
@@ -74,10 +90,12 @@ export default function SettingsPanel() {
       if (key === "aiProvider") {
         if (value === "siliconflow") {
           next.aiBaseUrl = "https://api.siliconflow.cn/v1";
-          next.aiVisionModel = SILICONFLOW_MODELS[0];
+          next.aiTextModel = SILICONFLOW_TEXT_MODELS[0];
+          next.aiVisionModel = SILICONFLOW_VISION_MODELS[0];
         } else if (value === "openai") {
           next.aiBaseUrl = "https://api.openai.com/v1";
-          next.aiVisionModel = OPENAI_MODELS[0];
+          next.aiTextModel = OPENAI_TEXT_MODELS[0];
+          next.aiVisionModel = OPENAI_VISION_MODELS[0];
         }
       }
       return next;
@@ -109,7 +127,8 @@ export default function SettingsPanel() {
     setMessage("配置已保存到 .env.local。");
   }
 
-  const modelOptions = form.aiProvider === "siliconflow" ? SILICONFLOW_MODELS : form.aiProvider === "openai" ? OPENAI_MODELS : [];
+  const visionModelOptions = form.aiProvider === "siliconflow" ? SILICONFLOW_VISION_MODELS : form.aiProvider === "openai" ? OPENAI_VISION_MODELS : [];
+  const textModelOptions = form.aiProvider === "siliconflow" ? SILICONFLOW_TEXT_MODELS : form.aiProvider === "openai" ? OPENAI_TEXT_MODELS : [];
 
   if (loading) {
     return <Card loading />;
@@ -149,7 +168,7 @@ export default function SettingsPanel() {
             </Row>
           </Card>
 
-          <Card title={<span className="card-title"><KeyRound size={20} />AI 视觉解析</span>}>
+          <Card title={<span className="card-title"><KeyRound size={20} />AI 模型</span>}>
             <Row gutter={[16, 16]}>
               <Col xs={24} md={12}>
                 <Field label="Provider">
@@ -176,16 +195,30 @@ export default function SettingsPanel() {
                 </Field>
               </Col>
               <Col xs={24} md={12}>
-                <Field label="Vision Model">
-                  {modelOptions.length ? (
+                <Field label="Text Model（分享文案）">
+                  {textModelOptions.length ? (
+                    <Select
+                      className="full-width"
+                      value={form.aiTextModel}
+                      onChange={(value) => update("aiTextModel", value)}
+                      options={textModelOptions.map((model) => ({ value: model, label: model }))}
+                    />
+                  ) : (
+                    <Input value={form.aiTextModel} onChange={(event) => update("aiTextModel", event.target.value)} placeholder="provider/text-model-name" />
+                  )}
+                </Field>
+              </Col>
+              <Col xs={24} md={12}>
+                <Field label="Vision Model（log 图片）">
+                  {visionModelOptions.length ? (
                     <Select
                       className="full-width"
                       value={form.aiVisionModel}
                       onChange={(value) => update("aiVisionModel", value)}
-                      options={modelOptions.map((model) => ({ value: model, label: model }))}
+                      options={visionModelOptions.map((model) => ({ value: model, label: model }))}
                     />
                   ) : (
-                    <Input value={form.aiVisionModel} onChange={(event) => update("aiVisionModel", event.target.value)} placeholder="provider/model-name" />
+                    <Input value={form.aiVisionModel} onChange={(event) => update("aiVisionModel", event.target.value)} placeholder="provider/vision-model-name" />
                   )}
                 </Field>
               </Col>
@@ -207,7 +240,7 @@ export default function SettingsPanel() {
           <Space orientation="vertical" size={16}>
             <div>
               <h3>Admin Access Token</h3>
-              <p className="muted">公开部署后，保存配置、上传解析、确认案例和批量导入都会校验 `ADMIN_ACCESS_TOKEN`。Vercel 环境变量和这里输入的值必须一致。</p>
+              <p className="muted">公开部署后，保存配置、上传解析、确认案例和批量导入都会校验 `ADMIN_ACCESS_TOKEN`。令牌只保存在当前浏览器会话里，关闭标签页后需要重新输入。</p>
             </div>
             <div>
               <h3>这两个 Supabase 值是什么？</h3>

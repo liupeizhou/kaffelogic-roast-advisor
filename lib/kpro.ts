@@ -99,7 +99,7 @@ export function parseCurvePoints(value?: string, kind: "temperature" | "fan" = "
   const maxValue = kind === "fan" ? 25000 : 260;
   let lastTime = -Infinity;
 
-  for (let i = 0; i < numbers.length - 1; i += 1) {
+  for (let i = 0; i < numbers.length - 1; i += 2) {
     const timeSeconds = numbers[i];
     const next = numbers[i + 1];
     const plausibleTime = timeSeconds >= 0 && timeSeconds <= 2400 && timeSeconds >= lastTime;
@@ -108,7 +108,6 @@ export function parseCurvePoints(value?: string, kind: "temperature" | "fan" = "
     if (plausibleTime && plausibleValue) {
       points.push({ timeSeconds, value: next });
       lastTime = timeSeconds;
-      i += 1;
     }
   }
 

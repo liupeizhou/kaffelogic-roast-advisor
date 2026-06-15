@@ -33,8 +33,9 @@ type ImportResponse = {
 
 const DEFAULT_REFERENCE_ROOT = "/Volumes/Extreme SSD/01_下载归档_Downloads/kaffelogic项目";
 
-export default function LibraryDashboard({ locale = "zh" }: { locale?: Locale }) {
+export default function LibraryDashboard({ locale = "zh", mode = "customer" }: { locale?: Locale; mode?: "customer" | "admin" }) {
   const zh = locale === "zh";
+  const isAdmin = mode === "admin";
   const [profiles, setProfiles] = useState<RoastProfileRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -110,16 +111,22 @@ export default function LibraryDashboard({ locale = "zh" }: { locale?: Locale })
     <div className="library-workbench">
       <section className="library-topbar">
         <div>
-          <Tag color="green">{zh ? "曲线/案例库" : "Profiles & cases"}</Tag>
-          <h1>{zh ? "把参考曲线变成可查询、可解释、可动态预览的烘焙工件。" : "Turn reference profiles into searchable, explainable and animated roast artifacts."}</h1>
+          <Tag color="green">{isAdmin ? (zh ? "管理后台" : "Admin console") : (zh ? "曲线/案例库" : "Profiles & cases")}</Tag>
+          <h1>
+            {isAdmin
+              ? (zh ? "导入、校验和管理官方参考曲线。" : "Import, verify and manage official reference profiles.")
+              : (zh ? "查询曲线资料库，查看动态预览和官方适用逻辑。" : "Browse profile library with animated previews and official fit logic.")}
+          </h1>
         </div>
         <Space size={8}>
           <Tooltip title="重新读取 Supabase 曲线表">
             <Button icon={<RefreshCw size={16} />} onClick={loadProfiles} loading={loading} />
           </Tooltip>
-          <Button type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceCurves} loading={importing}>
-            {zh ? "导入参考曲线" : "Import references"}
-          </Button>
+          {isAdmin ? (
+            <Button type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceCurves} loading={importing}>
+              {zh ? "导入参考曲线" : "Import references"}
+            </Button>
+          ) : null}
         </Space>
       </section>
 
@@ -144,23 +151,25 @@ export default function LibraryDashboard({ locale = "zh" }: { locale?: Locale })
 
       <div className="library-grid">
         <aside className="library-sidebar">
-          <Card title={<span className="card-title"><FolderInput size={18} />{zh ? "参考曲线导入" : "Reference import"}</span>}>
-            <Space orientation="vertical" size={12} className="full-width">
-              <Input.Password
-                value={adminToken}
-                onChange={(event) => {
-                  setAdminToken(event.target.value);
-                  setStoredAdminToken(event.target.value);
-                }}
-                placeholder="Admin Access Token"
-              />
-              <Input value={rootPath} onChange={(event) => setRootPath(event.target.value)} />
-              <Button block type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceCurves} loading={importing}>
-                {zh ? "扫描并写入 Supabase" : "Scan and write to Supabase"}
-              </Button>
-              <span className="muted">{zh ? "导入只处理 `.kpro`，自动跳过 `._*` 和 `.DS_Store`。重复文件按 hash 去重。" : "Only .kpro files are imported. ._* and .DS_Store are skipped; duplicates are de-duped by hash."}</span>
-            </Space>
-          </Card>
+          {isAdmin ? (
+            <Card title={<span className="card-title"><FolderInput size={18} />{zh ? "参考曲线导入" : "Reference import"}</span>}>
+              <Space orientation="vertical" size={12} className="full-width">
+                <Input.Password
+                  value={adminToken}
+                  onChange={(event) => {
+                    setAdminToken(event.target.value);
+                    setStoredAdminToken(event.target.value);
+                  }}
+                  placeholder="Admin Access Token"
+                />
+                <Input value={rootPath} onChange={(event) => setRootPath(event.target.value)} />
+                <Button block type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceCurves} loading={importing}>
+                  {zh ? "扫描并写入 Supabase" : "Scan and write to Supabase"}
+                </Button>
+                <span className="muted">{zh ? "导入只处理 `.kpro`，自动跳过 `._*` 和 `.DS_Store`。重复文件按 hash 去重。" : "Only .kpro files are imported. ._* and .DS_Store are skipped; duplicates are de-duped by hash."}</span>
+              </Space>
+            </Card>
+          ) : null}
 
           <Card title={<span className="card-title"><Search size={18} />{zh ? "曲线索引" : "Profile index"}</span>}>
             <Space orientation="vertical" size={12} className="full-width">
@@ -170,8 +179,12 @@ export default function LibraryDashboard({ locale = "zh" }: { locale?: Locale })
                 {!loading && !filteredProfiles.length ? (
                   <div className="empty-profile-list">
                     {zh
-                      ? "暂无 Supabase 曲线。右侧仍显示演示曲线。若刚开始配置，请先在后台设置 Supabase URL / service role key，并执行 migration。"
-                      : "No Supabase profiles yet. The demo curve remains visible. Configure Supabase URL / service role key and run migrations first."}
+                      ? (isAdmin
+                        ? "暂无 Supabase 曲线。请先配置 Supabase URL / service role key，并执行 migration。"
+                        : "暂无公开曲线。管理员导入官方曲线后，这里会显示可浏览资料库。")
+                      : (isAdmin
+                        ? "No Supabase profiles yet. Configure Supabase URL / service role key and run migrations first."
+                        : "No public profiles yet. The library will appear after official profiles are imported.")}
                   </div>
                 ) : null}
                 {filteredProfiles.map((profile) => (

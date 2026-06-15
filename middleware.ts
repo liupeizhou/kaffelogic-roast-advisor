@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DEFAULT_LOCALE, isLocale, type Locale } from "@/lib/i18n";
 
-const PROTECTED_PATHS = ["/upload", "/editor", "/account"];
+const PROTECTED_PATHS = ["/upload", "/editor", "/account", "/admin"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
