@@ -25,6 +25,20 @@ export type RoastProfileRecord = {
   roast_curve_points: Array<{ timeSeconds: number; value: number }>;
   fan_curve_points: Array<{ timeSeconds: number; value: number }>;
   raw_fields?: Record<string, string>;
+  download_count?: number;
+  review_count?: number;
+  rating_average?: number;
+  leaderboard_score?: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RoastProfileReviewRecord = {
+  id: string;
+  profile_id: string;
+  owner_id: string;
+  rating: number;
+  body: string;
   created_at: string;
   updated_at: string;
 };
@@ -293,6 +307,10 @@ export async function listRoastProfiles(limit = 120, ownerId?: string | null): P
       "roast_curve_points",
       "fan_curve_points",
       "raw_fields",
+      "download_count",
+      "review_count",
+      "rating_average",
+      "leaderboard_score",
       "created_at",
       "updated_at"
     ].join(","))
@@ -302,6 +320,102 @@ export async function listRoastProfiles(limit = 120, ownerId?: string | null): P
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as unknown as RoastProfileRecord[];
+}
+
+export async function listRoastProfileLeaderboard(limit = 50, ownerId?: string | null): Promise<RoastProfileRecord[]> {
+  const supabase = await requireSupabaseAdmin();
+  let query = supabase
+    .from("roast_profiles")
+    .select([
+      "id",
+      "upload_id",
+      "owner_id",
+      "file_name",
+      "display_name",
+      "short_name",
+      "designer",
+      "description",
+      "source_type",
+      "source_scope",
+      "target_brew",
+      "process_fit",
+      "altitude_range",
+      "recommended_level",
+      "expected_first_crack_temp",
+      "expected_colour_change_temp",
+      "roast_levels",
+      "roast_curve_points",
+      "fan_curve_points",
+      "raw_fields",
+      "download_count",
+      "review_count",
+      "rating_average",
+      "leaderboard_score",
+      "created_at",
+      "updated_at"
+    ].join(","))
+    .order("leaderboard_score", { ascending: false })
+    .order("download_count", { ascending: false })
+    .limit(limit);
+  query = ownerId ? query.or(`visibility.in.(public,unlisted),owner_id.eq.${ownerId}`) : query.in("visibility", ["public", "unlisted"]);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as unknown as RoastProfileRecord[];
+}
+
+export async function getRoastProfile(profileId: string, ownerId?: string | null): Promise<RoastProfileRecord | null> {
+  const supabase = await requireSupabaseAdmin();
+  let query = supabase
+    .from("roast_profiles")
+    .select("*")
+    .eq("id", profileId);
+  query = ownerId ? query.or(`visibility.in.(public,unlisted),owner_id.eq.${ownerId}`) : query.in("visibility", ["public", "unlisted"]);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  return data as unknown as RoastProfileRecord | null;
+}
+
+export async function recordRoastProfileDownload(profileId: string, ownerId?: string | null) {
+  const supabase = await requireSupabaseAdmin();
+  const { error } = await supabase.from("roast_profile_downloads").insert({
+    profile_id: profileId,
+    owner_id: ownerId ?? null
+  });
+  if (error) throw error;
+}
+
+export async function listRoastProfileReviews(profileId: string): Promise<RoastProfileReviewRecord[]> {
+  const supabase = await requireSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("roast_profile_reviews")
+    .select("id,profile_id,owner_id,rating,body,created_at,updated_at")
+    .eq("profile_id", profileId)
+    .order("updated_at", { ascending: false })
+    .limit(80);
+  if (error) throw error;
+  return (data ?? []) as unknown as RoastProfileReviewRecord[];
+}
+
+export async function upsertRoastProfileReview(input: {
+  profileId: string;
+  ownerId: string;
+  rating: number;
+  body: string;
+}) {
+  const supabase = await requireSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("roast_profile_reviews")
+    .upsert({
+      profile_id: input.profileId,
+      owner_id: input.ownerId,
+      rating: input.rating,
+      body: input.body,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "profile_id,owner_id" })
+    .select("id,profile_id,owner_id,rating,body,created_at,updated_at")
+    .single();
+  if (error) throw error;
+  return data as unknown as RoastProfileReviewRecord;
 }
 
 export async function listCurveDocuments(ownerId: string): Promise<CurveDocumentRecord[]> {
@@ -401,7 +515,7 @@ async function getBaselineTemperaturePoints(
       .from("roast_profiles")
       .select("roast_curve_points")
       .eq("id", baselineId)
-      .in("visibility", ["public", "unlisted"])
+      .or(`visibility.in.(public,unlisted),owner_id.eq.${ownerId}`)
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error("公开参考曲线不存在。");

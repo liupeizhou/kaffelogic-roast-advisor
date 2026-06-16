@@ -14,7 +14,7 @@
    - `ADMIN_EMAILS`
 2. Supabase 已执行 `supabase/migrations/` 下全部迁移。
 3. 登录邮箱必须在 `ADMIN_EMAILS` 白名单中。
-4. 待导入目录只放真实 `.kpro` 文件；系统会跳过 `.DS_Store` 和 `._*`。
+4. 批量导入只处理真实 `.kpro` 文件；系统会跳过 `.DS_Store` 和 `._*`。
 
 ## 本地导入
 
@@ -42,12 +42,21 @@ http://localhost:3000/zh/admin/library
 
 ## 生产导入
 
-生产环境无法读取你本机磁盘路径，因此不要在 Vercel 页面里填写本地目录直接导入。推荐流程：
+生产环境使用“选择多个 .kpro 直接导入”，不依赖服务器读取本地磁盘路径：
 
-1. 在本地连接生产 Supabase 环境变量。
-2. 本地打开 `/zh/admin/library` 执行导入。
-3. 导入数据会直接写入生产 Supabase。
-4. 生产站点 `/zh/library` 会读取同一套 Supabase 数据。
+1. 打开：
+
+```text
+https://www.kaffelogic.cn/zh/admin/library
+```
+
+2. 用 `ADMIN_EMAILS` 白名单内的管理员邮箱验证码登录。
+3. 点击“选择多个 .kpro 直接导入”。
+4. 一次选择多条 `.kpro` 文件。
+5. 点击“上传并导入 N 条”。
+6. 导入数据会写入生产 Supabase，并在 `/zh/library`、上传评分参考下拉和 `/zh/leaderboard` 中可见。
+
+“本地开发：按服务器目录扫描”只适合本地 `npm run dev` 时使用；Vercel 生产环境请使用文件上传导入。
 
 ## 导入后核对
 

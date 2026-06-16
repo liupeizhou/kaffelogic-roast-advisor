@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     if (!supabase) {
       return NextResponse.json({ error: "Supabase 尚未配置，无法保存上传和扣减额度。" }, { status: 503 });
     }
-    const quotaBefore = await getQuotaSnapshot(supabase, user.id);
+    const quotaBefore = await getQuotaSnapshot(supabase, user.id, new Date(), user.email);
     if (!quotaBefore.canAnalyze) {
       return NextResponse.json({ error: "今日或本月额度已用尽，请订阅或充值按量次数。", quotaSnapshot: quotaBefore }, { status: 402 });
     }
@@ -122,6 +122,7 @@ export async function POST(request: Request) {
       ? await chargeSuccessfulAnalysis({
         supabase,
         userId: user.id,
+        userEmail: user.email,
         uploadId,
         metadata: { fileKind, duplicate, fileName: file.name }
       })

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { groupFromPlan, type UserGroupCode } from "@/lib/user-groups";
+import { groupFromPlan, isAdminEmail, type UserGroupCode } from "@/lib/user-groups";
 
 export type PlanCode = "free" | "balanced" | "pro";
 export type ChargeSource = "subscription" | "credits" | "free" | "none";
@@ -48,6 +48,26 @@ export function getShanghaiUsageWindow(date = new Date()) {
 export async function getQuotaSnapshot(supabase: SupabaseClient, userId: string, now = new Date(), email?: string | null): Promise<QuotaSnapshot> {
   const { usageDay, usageMonth } = getShanghaiUsageWindow(now);
   const plan = await getActivePlan(supabase, userId);
+  if (isAdminEmail(email)) {
+    return {
+      planCode: plan,
+      userGroup: "management",
+      dailyLimit: 999999,
+      monthlyLimit: 999999,
+      dailyUsed: 0,
+      monthlyUsed: 0,
+      dailyRemaining: 999999,
+      monthlyRemaining: 999999,
+      freeDailyLimit: PLAN_LIMITS.free.dailyLimit,
+      freeDailyUsed: 0,
+      freeDailyRemaining: PLAN_LIMITS.free.dailyLimit,
+      creditBalance: 999999,
+      usageDay,
+      usageMonth,
+      nextChargeSource: "none",
+      canAnalyze: true
+    };
+  }
   const planLimits = PLAN_LIMITS[plan];
   const [dailyUsed, monthlyUsed, freeDailyUsed, creditBalance] = await Promise.all([
     countUsage(supabase, userId, usageDay, null, "day"),
@@ -90,8 +110,12 @@ export async function chargeSuccessfulAnalysis(input: {
   supabase: SupabaseClient;
   userId: string;
   uploadId: string | null;
+  userEmail?: string | null;
   metadata?: Record<string, unknown>;
 }) {
+  if (isAdminEmail(input.userEmail)) {
+    return getQuotaSnapshot(input.supabase, input.userId, new Date(), input.userEmail);
+  }
   const rpcSnapshot = await chargeWithRpc(input);
   if (rpcSnapshot) return rpcSnapshot;
 

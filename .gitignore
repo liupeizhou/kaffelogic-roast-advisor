@@ -11,3 +11,4 @@ ops/
 .DS_Store
 ._*
 .vercel
+supabase/.temp/

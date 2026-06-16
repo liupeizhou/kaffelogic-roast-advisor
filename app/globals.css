@@ -444,6 +444,65 @@ h3 {
   background: #fbfcf9;
 }
 
+.library-guide {
+  margin-bottom: 16px;
+}
+
+.leaderboard-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.leaderboard-item {
+  cursor: pointer;
+  border-radius: 8px;
+  padding-inline: 12px;
+}
+
+.leaderboard-item.active,
+.leaderboard-item:hover {
+  background: #fbfcf9;
+}
+
+.radar-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.radar-chart {
+  width: min(100%, 360px);
+  height: auto;
+}
+
+.radar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.radar-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.radar-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.radar-empty {
+  color: var(--muted);
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+}
+
 .file-row {
   display: flex;
   flex-wrap: wrap;

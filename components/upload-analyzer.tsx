@@ -5,6 +5,8 @@ import { CheckCircle2, FileUp, History, Save, Star, UploadCloud } from "lucide-r
 import { Alert, Button, Card, Col, Descriptions, Divider, Empty, Image, List, Row, Select, Space, Statistic, Tag, Upload } from "antd";
 import type { UploadProps } from "antd";
 import CurveChart from "@/components/curve-chart";
+import CurveRadarChart from "@/components/curve-radar-chart";
+import { buildCurveRadarMetrics } from "@/lib/curve-radar";
 import { getDictionary, type Locale } from "@/lib/i18n";
 import type { CurveScoreResult } from "@/lib/curve-scoring";
 import type { CurveDocumentRecord, RoastProfileRecord, UploadHistoryItem } from "@/lib/roast-persistence";
@@ -17,7 +19,7 @@ type ReferenceOption = {
 
 export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
   const t = getDictionary(locale);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<UploadAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,59 +29,68 @@ export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [referenceOptions, setReferenceOptions] = useState<ReferenceOption[]>([]);
   const [selectedReference, setSelectedReference] = useState<string | null>(null);
+  const [compareUploadId, setCompareUploadId] = useState<string | null>(null);
   const [scoring, setScoring] = useState(false);
   const [scoreResult, setScoreResult] = useState<(CurveScoreResult & { id?: string; createdAt?: string }) | null>(null);
 
-  const isImage = useMemo(() => file?.type.startsWith("image/") ?? false, [file]);
+  const firstFile = files[0] ?? null;
+  const isImage = useMemo(() => firstFile?.type.startsWith("image/") ?? false, [firstFile]);
+  const compareItem = useMemo(() => history.find((item) => item.upload.id === compareUploadId) ?? null, [compareUploadId, history]);
 
   useEffect(() => {
     void loadHistory();
     void loadReferenceOptions();
   }, []);
 
-  function onFileChange(nextFile: File | null) {
-    setFile(nextFile);
+  function onFilesChange(nextFiles: File[]) {
+    setFiles(nextFiles);
     setResult(null);
     setError(null);
     setPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
-      return nextFile && nextFile.type.startsWith("image/") ? URL.createObjectURL(nextFile) : null;
+      const nextImage = nextFiles.find((item) => item.type.startsWith("image/"));
+      return nextImage ? URL.createObjectURL(nextImage) : null;
     });
   }
 
   const uploadProps: UploadProps = {
     accept: ".kpro,.klog,image/png,image/jpeg,image/webp,image/heic,image/heif",
-    maxCount: 1,
+    multiple: true,
     beforeUpload: (nextFile) => {
-      onFileChange(nextFile);
+      setFiles((current) => [...current, nextFile]);
       return false;
     },
-    onRemove: () => {
-      onFileChange(null);
+    onRemove: (file) => {
+      setFiles((current) => current.filter((item) => item.name !== file.name));
       return true;
     }
   };
 
   async function analyze() {
-    if (!file) return;
+    if (!files.length) return;
     setLoading(true);
     setError(null);
+    let lastResult: UploadAnalysisResult | null = null;
+    const errors: string[] = [];
 
-    const formData = new FormData();
-    formData.set("file", file);
-    const response = await fetch("/api/uploads/analyze", {
-      method: "POST",
-      body: formData
-    });
-
-    const payload = await response.json();
-    setLoading(false);
-
-    if (!response.ok) {
-      setError(payload.error ?? "上传分析失败。");
-      return;
+    for (const file of files) {
+      const formData = new FormData();
+      formData.set("file", file);
+      const response = await fetch("/api/uploads/analyze", {
+        method: "POST",
+        body: formData
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        errors.push(`${file.name}: ${payload.error ?? "上传分析失败。"}`);
+        continue;
+      }
+      lastResult = payload as UploadAnalysisResult;
     }
-    setResult(payload);
+    setLoading(false);
+    if (errors.length) setError(errors.join("；"));
+    if (!lastResult) return;
+    setResult(lastResult);
     setScoreResult(null);
     void loadHistory();
   }
@@ -179,10 +190,11 @@ export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
             <Button icon={<FileUp size={18} />}>{t.uploadPage.selectFile}</Button>
           </Upload>
           <Space size={12} wrap>
-            <Button type="primary" icon={<UploadCloud size={18} />} disabled={!file} loading={loading} onClick={analyze}>
+            <Button type="primary" icon={<UploadCloud size={18} />} disabled={!files.length} loading={loading} onClick={analyze}>
               {t.uploadPage.analyze}
             </Button>
-            <span className="muted">{file ? `${file.name} · ${Math.round(file.size / 1024)} KB` : t.uploadPage.hint}</span>
+            <span className="muted">{files.length ? `${files.length} 个文件 · ${Math.round(files.reduce((sum, file) => sum + file.size, 0) / 1024)} KB` : t.uploadPage.hint}</span>
+            {files.length ? <Button onClick={() => onFilesChange([])}>清空队列</Button> : null}
           </Space>
           <span className="muted">{t.uploadPage.quotaHint}</span>
           {error ? <Alert type="error" showIcon message={error} /> : null}
@@ -206,6 +218,7 @@ export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
             scoring={scoring}
             score={scoreResult}
           />
+          <UploadRadarCompare result={result} history={history} compareUploadId={compareUploadId} onCompareChange={setCompareUploadId} compareItem={compareItem} />
           <AnalysisResult result={result} onConfirm={confirmAnalysis} confirming={confirming} />
         </>
       ) : null}
@@ -267,6 +280,51 @@ function AnalysisResult({ result, onConfirm, confirming }: {
         </Card>
       </Col>
     </Row>
+  );
+}
+
+function UploadRadarCompare({
+  result,
+  history,
+  compareUploadId,
+  onCompareChange,
+  compareItem
+}: {
+  result: UploadAnalysisResult;
+  history: UploadHistoryItem[];
+  compareUploadId: string | null;
+  onCompareChange: (value: string | null) => void;
+  compareItem: UploadHistoryItem | null;
+}) {
+  const currentCurve = getResultCurvePoints(result);
+  const compareCurve = compareItem ? getResultCurvePoints(historyItemToResult(compareItem)) : null;
+  if (!currentCurve) return null;
+  const currentMetrics = buildCurveRadarMetrics(currentCurve.temp, currentCurve.fan);
+  const compareMetrics = compareCurve ? buildCurveRadarMetrics(compareCurve.temp, compareCurve.fan) : null;
+
+  return (
+    <Card title="上传曲线雷达对比">
+      <Space orientation="vertical" size={12} className="full-width">
+        <Select
+          allowClear
+          showSearch
+          placeholder="选择一条已上传曲线叠加对比"
+          value={compareUploadId ?? undefined}
+          onChange={(value) => onCompareChange(value ?? null)}
+          options={history
+            .filter((item) => item.upload.id !== result.uploadId && Boolean(getResultCurvePoints(historyItemToResult(item))))
+            .map((item) => ({ value: item.upload.id, label: item.upload.file_name }))}
+          optionFilterProp="label"
+        />
+        <CurveRadarChart
+          locale="zh"
+          series={[
+            { name: result.fileName, color: "#f26735", metrics: currentMetrics },
+            ...(compareMetrics && compareItem ? [{ name: compareItem.upload.file_name, color: "#2563eb", metrics: compareMetrics }] : [])
+          ]}
+        />
+      </Space>
+    </Card>
   );
 }
 
@@ -525,6 +583,28 @@ function historyItemToResult(item: UploadHistoryItem): UploadAnalysisResult {
     klog: item.log?.parsed_payload ?? undefined,
     logAnalysis: analysis ?? undefined
   };
+}
+
+function getResultCurvePoints(result: UploadAnalysisResult) {
+  if (result.profile?.roastCurvePoints?.length) {
+    return { temp: result.profile.roastCurvePoints, fan: result.profile.fanCurvePoints };
+  }
+  if (result.klog?.samples?.length) {
+    const temp = downsample(result.klog.samples, 180)
+      .map((sample) => ({
+        timeSeconds: sample.timeSeconds,
+        value: sample.meanTempC ?? sample.tempC ?? sample.spotTempC ?? 0
+      }))
+      .filter((point) => point.value > 0);
+    const fan = downsample(result.klog.samples, 180)
+      .map((sample) => ({
+        timeSeconds: sample.timeSeconds,
+        value: sample.fanRpm ?? 0
+      }))
+      .filter((point) => point.value > 0);
+    if (temp.length) return { temp, fan };
+  }
+  return null;
 }
 
 function roastProfileToKpro(profile: RoastProfileRecord): KproProfile {

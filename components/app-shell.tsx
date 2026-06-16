@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BarChart3, Coffee, Database, Languages, LayoutDashboard, LogIn, LogOut, PencilRuler, Settings, UploadCloud, UserCog, UserRound } from "lucide-react";
+import { BarChart3, Coffee, Database, Languages, LayoutDashboard, LogIn, LogOut, PencilRuler, Settings, Trophy, UploadCloud, UserCog, UserRound } from "lucide-react";
 import { Button, Layout, Menu, Space } from "antd";
 import type { MenuProps } from "antd";
 import { getDictionary, stripLocale, withLocale, type Locale } from "@/lib/i18n";
@@ -23,6 +23,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { key: "/recommend", icon: <BarChart3 size={16} />, label: <Link href={withLocale(locale, "/recommend")}>{dictionary.nav.recommend}</Link> },
     { key: "/upload", icon: <UploadCloud size={16} />, label: <Link href={withLocale(locale, "/upload")}>{dictionary.nav.upload}</Link> },
     { key: "/library", icon: <Database size={16} />, label: <Link href={withLocale(locale, "/library")}>{dictionary.nav.library}</Link> },
+    { key: "/leaderboard", icon: <Trophy size={16} />, label: <Link href={withLocale(locale, "/leaderboard")}>{dictionary.nav.leaderboard}</Link> },
     { key: "/editor", icon: <PencilRuler size={16} />, label: <Link href={withLocale(locale, "/editor")}>{dictionary.nav.editor}</Link> },
     { key: "/account", icon: <UserRound size={16} />, label: <Link href={withLocale(locale, "/account")}>{dictionary.nav.account}</Link> }
   ], [dictionary, locale]);
