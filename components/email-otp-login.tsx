@@ -26,12 +26,10 @@ export default function EmailOtpLogin({ locale }: { locale: Locale }) {
     setLoading(true);
     try {
       const supabase = createSupabaseBrowserClient();
-      const origin = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
       const { error: signInError } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
-          shouldCreateUser: true,
-          emailRedirectTo: `${origin.replace(/\/$/, "")}/${locale}/login`
+          shouldCreateUser: true
         }
       });
       if (signInError) throw signInError;
