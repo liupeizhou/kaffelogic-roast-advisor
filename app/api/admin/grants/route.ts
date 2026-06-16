@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { PLAN_LIMITS, type PlanCode } from "@/lib/quota";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { planFromGroup } from "@/lib/user-groups";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const denied = requireAdmin(request);
+  const denied = await requireAdmin();
   if (denied) return denied;
 
   const supabase = await getSupabaseAdmin();
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const userId = typeof body.userId === "string" ? body.userId : "";
-    const planCode = normalizePlanCode(body.planCode);
+    const planCode = normalizePlanCode(body.planCode ?? body.userGroup);
     const credits = Number(body.credits ?? 0);
     if (!userId) return NextResponse.json({ error: "缺少 userId。" }, { status: 400 });
 
@@ -58,5 +59,9 @@ export async function POST(request: Request) {
 }
 
 function normalizePlanCode(value: unknown): PlanCode | null {
+  if (typeof value === "string") {
+    const mapped = planFromGroup(value);
+    if (mapped) return mapped;
+  }
   return value === "balanced" || value === "pro" || value === "free" ? value : null;
 }

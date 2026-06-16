@@ -251,14 +251,14 @@ Kaffelogic `.kpro` 文件是一种基于 `key:value` 行的文本格式。解析
 
 项目支持两种配置方式：
 
-1. **.env.local 文件**（本地开发）：通过后台 `/admin/settings` 页面可写入/更新环境变量，包括 Supabase 连接信息、AI 提供商、API Key 等
+1. **.env.local 文件**（本地开发）：通过后台 `/zh/admin/settings` 页面可写入/更新环境变量，包括 Supabase 连接信息、AI 提供商、API Key 等
 2. **Vercel 环境变量**（生产部署）：直接使用 Vercel Project Settings 中的环境变量
 
 关键环境变量：
 - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`（服务端专用）
 - `AI_API_KEY` / `AI_BASE_URL` / `AI_VISION_MODEL`
-- `ADMIN_ACCESS_TOKEN`（保护写操作）
+- `ADMIN_EMAILS`（管理后台邮箱白名单，逗号/分号/换行分隔）
 
 ## 八、质量保障
 

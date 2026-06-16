@@ -25,7 +25,7 @@ type ImportItem = {
 };
 
 export async function POST(request: Request) {
-  const denied = requireAdmin(request);
+  const denied = await requireAdmin();
   if (denied) return denied;
 
   try {

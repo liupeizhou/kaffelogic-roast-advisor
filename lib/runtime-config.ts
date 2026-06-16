@@ -12,6 +12,7 @@ export type RuntimeConfig = {
   aiApiKey: string;
   aiTextModel: string;
   aiVisionModel: string;
+  adminEmails: string;
 };
 
 export type PublicRuntimeConfig = Omit<RuntimeConfig, "supabaseAnonKey" | "supabaseServiceRoleKey" | "aiApiKey"> & {
@@ -33,7 +34,7 @@ const CONFIG_KEYS = [
   "AI_API_KEY",
   "AI_TEXT_MODEL",
   "AI_VISION_MODEL",
-  "ADMIN_ACCESS_TOKEN",
+  "ADMIN_EMAILS",
   "OPENAI_API_KEY",
   "OPENAI_VISION_MODEL"
 ] as const;
@@ -54,7 +55,8 @@ export async function getPublicRuntimeConfig(): Promise<PublicRuntimeConfig> {
     aiBaseUrl: config.aiBaseUrl,
     aiApiKeySet: Boolean(config.aiApiKey),
     aiTextModel: config.aiTextModel,
-    aiVisionModel: config.aiVisionModel
+    aiVisionModel: config.aiVisionModel,
+    adminEmails: config.adminEmails
   };
 }
 
@@ -72,6 +74,7 @@ export async function updateRuntimeConfig(input: Partial<Record<string, string>>
   setIfPresent(next, "AI_API_KEY", input.aiApiKey, true);
   setIfPresent(next, "AI_TEXT_MODEL", input.aiTextModel);
   setIfPresent(next, "AI_VISION_MODEL", input.aiVisionModel);
+  setIfPresent(next, "ADMIN_EMAILS", input.adminEmails);
 
   if (input.aiApiKey && !input.openAiApiKey) {
     next.OPENAI_API_KEY = input.aiApiKey;
@@ -103,7 +106,8 @@ function configFromValues(values: Record<string, string>): RuntimeConfig {
     aiBaseUrl: values.AI_BASE_URL || (aiProvider === "siliconflow" ? "https://api.siliconflow.cn/v1" : "https://api.openai.com/v1"),
     aiApiKey: values.AI_API_KEY || values.OPENAI_API_KEY || "",
     aiTextModel: values.AI_TEXT_MODEL || (aiProvider === "siliconflow" ? "Qwen/Qwen3-32B" : "gpt-4.1-mini"),
-    aiVisionModel: values.AI_VISION_MODEL || values.OPENAI_VISION_MODEL || (aiProvider === "siliconflow" ? "Qwen/Qwen2.5-VL-72B-Instruct" : "gpt-4.1-mini")
+    aiVisionModel: values.AI_VISION_MODEL || values.OPENAI_VISION_MODEL || (aiProvider === "siliconflow" ? "Qwen/Qwen2.5-VL-72B-Instruct" : "gpt-4.1-mini"),
+    adminEmails: values.ADMIN_EMAILS ?? ""
   };
 }
 

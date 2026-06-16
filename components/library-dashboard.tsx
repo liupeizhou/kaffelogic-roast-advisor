@@ -5,7 +5,6 @@ import { Alert, Button, Card, Col, Input, Row, Space, Spin, Statistic, Tag, Tool
 import { Database, FolderInput, RefreshCw, Search, UploadCloud } from "lucide-react";
 import AnimatedRoastCurve, { type AnimatedRoastProfile } from "@/components/animated-roast-curve";
 import OfficialProfileGuide from "@/components/official-profile-guide";
-import { adminHeaders, getStoredAdminToken, setStoredAdminToken } from "@/lib/admin-client";
 import type { Locale } from "@/lib/i18n";
 import type { RoastProfileRecord } from "@/lib/roast-persistence";
 
@@ -40,7 +39,6 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [rootPath, setRootPath] = useState(DEFAULT_REFERENCE_ROOT);
-  const [adminToken, setAdminToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +67,7 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
     try {
       const response = await fetch("/api/import/reference-curves", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders(adminToken) },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rootPath })
       });
       const payload = await response.json() as ImportResponse;
@@ -84,7 +82,6 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
   }
 
   useEffect(() => {
-    setAdminToken(getStoredAdminToken());
     void loadProfiles();
   }, [loadProfiles]);
 
@@ -154,14 +151,6 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
           {isAdmin ? (
             <Card title={<span className="card-title"><FolderInput size={18} />{zh ? "参考曲线导入" : "Reference import"}</span>}>
               <Space orientation="vertical" size={12} className="full-width">
-                <Input.Password
-                  value={adminToken}
-                  onChange={(event) => {
-                    setAdminToken(event.target.value);
-                    setStoredAdminToken(event.target.value);
-                  }}
-                  placeholder="Admin Access Token"
-                />
                 <Input value={rootPath} onChange={(event) => setRootPath(event.target.value)} />
                 <Button block type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceCurves} loading={importing}>
                   {zh ? "扫描并写入 Supabase" : "Scan and write to Supabase"}

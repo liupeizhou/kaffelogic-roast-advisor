@@ -1,30 +1,21 @@
 import { NextResponse } from "next/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/user-groups";
 
-const ADMIN_HEADER = "x-admin-token";
-
-export function requireAdmin(request: Request): NextResponse | null {
-  const configuredToken = process.env.ADMIN_ACCESS_TOKEN?.trim();
-  if (!configuredToken && process.env.NODE_ENV !== "production") return null;
-
-  if (!configuredToken) {
-    return NextResponse.json({
-      error: "生产环境未配置 ADMIN_ACCESS_TOKEN，写操作已禁用。"
-    }, { status: 403 });
+export async function requireAdmin(): Promise<NextResponse | null> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase 登录未配置。" }, { status: 503 });
   }
 
-  const suppliedToken = request.headers.get(ADMIN_HEADER)?.trim()
-    || parseBearerToken(request.headers.get("authorization"));
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user?.email) {
+    return NextResponse.json({ error: "请先登录管理员账号。" }, { status: 401 });
+  }
 
-  if (suppliedToken !== configuredToken) {
-    return NextResponse.json({
-      error: "缺少或错误的管理令牌。"
-    }, { status: 401 });
+  if (!isAdminEmail(data.user.email)) {
+    return NextResponse.json({ error: "当前邮箱不在管理员邮件列表中。" }, { status: 403 });
   }
 
   return null;
-}
-
-function parseBearerToken(value: string | null): string {
-  if (!value?.startsWith("Bearer ")) return "";
-  return value.slice("Bearer ".length).trim();
 }

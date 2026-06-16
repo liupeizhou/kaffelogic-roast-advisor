@@ -16,8 +16,8 @@ export default async function AdminHomePage({ params }: { params: Promise<{ loca
         <h1>{zh ? "管理后台只处理配置、导入和用户授权。" : "Admin console is reserved for configuration, imports and user grants."}</h1>
         <p className="lede">
           {zh
-            ? "客户前台不再暴露 Admin Token、批量导入和服务端密钥配置。后续你配置 API 后，数据流可以在这里独立验证。"
-            : "The customer app no longer exposes admin tokens, bulk imports or server-side key settings. After API configuration, data flows can be verified here independently."}
+            ? "客户前台不再暴露后台入口、批量导入和服务端密钥配置。后续你配置 API 后，数据流可以在这里独立验证。"
+            : "The customer app no longer exposes admin entry points, bulk imports or server-side key settings. After API configuration, data flows can be verified here independently."}
         </p>
       </section>
       <Row gutter={[16, 16]}>

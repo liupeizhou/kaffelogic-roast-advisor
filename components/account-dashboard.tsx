@@ -27,12 +27,14 @@ export default function AccountDashboard({ locale }: { locale: Locale }) {
   }, []);
 
   const quota = payload?.quotaSnapshot;
+  const groupLabel = quota ? getGroupLabel(quota.userGroup, locale) : null;
   return (
     <Space orientation="vertical" size={16} className="full-width">
       {error ? <Alert type="warning" showIcon message={error} /> : null}
       <Card>
         <Space size={10} wrap>
           <Tag color="green">{payload?.user?.email ?? "Supabase user"}</Tag>
+          {groupLabel ? <Tag color={quota?.userGroup === "management" ? "gold" : "blue"}>{groupLabel}</Tag> : null}
           {quota ? <Tag>{quota.planCode}</Tag> : null}
           {quota ? <Tag>GMT+8 {quota.usageDay}</Tag> : null}
         </Space>
@@ -68,4 +70,14 @@ function Plan({ name, price, quota }: { name: string; price: string; quota: stri
       <small>{quota}</small>
     </div>
   );
+}
+
+function getGroupLabel(group: QuotaSnapshot["userGroup"], locale: Locale) {
+  const labels = {
+    management: locale === "zh" ? "管理组" : "Management",
+    premium: locale === "zh" ? "高级订阅用户组" : "Premium subscribers",
+    standard: locale === "zh" ? "标准订阅用户组" : "Standard subscribers",
+    free: locale === "zh" ? "普通用户组" : "Free users"
+  };
+  return labels[group];
 }

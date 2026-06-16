@@ -12,6 +12,6 @@ export async function GET() {
   if (!supabase) {
     return NextResponse.json({ error: "Supabase 尚未配置。" }, { status: 503 });
   }
-  const quotaSnapshot = await getQuotaSnapshot(supabase, user.id);
+  const quotaSnapshot = await getQuotaSnapshot(supabase, user.id, new Date(), user.email);
   return NextResponse.json({ user: { id: user.id, email: user.email }, quotaSnapshot });
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, Database, Settings, UploadCloud } from "lucide-react";
+import { BarChart3, Database, UploadCloud } from "lucide-react";
 import { Button, Card, Col, Row, Space, Statistic, Tag } from "antd";
 import { getDictionary, withLocale, type Locale } from "@/lib/i18n";
 
@@ -18,9 +18,6 @@ export default function LocalizedHomePage({ locale }: { locale: Locale }) {
           <Space size={12} wrap>
             <Link href={withLocale(locale, "/upload")}>
               <Button type="primary" size="large" icon={<UploadCloud size={18} />}>{t.actions.upload}</Button>
-            </Link>
-            <Link href={withLocale(locale, "/admin/settings")}>
-              <Button size="large" icon={<Settings size={18} />}>{t.actions.configure}</Button>
             </Link>
           </Space>
         </div>

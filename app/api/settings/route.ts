@@ -4,14 +4,14 @@ import { getPublicRuntimeConfig, updateRuntimeConfig } from "@/lib/runtime-confi
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  const denied = requireAdmin(request);
+export async function GET() {
+  const denied = await requireAdmin();
   if (denied) return denied;
   return NextResponse.json(await getPublicRuntimeConfig());
 }
 
 export async function POST(request: Request) {
-  const denied = requireAdmin(request);
+  const denied = await requireAdmin();
   if (denied) return denied;
 
   try {

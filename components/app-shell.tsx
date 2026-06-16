@@ -64,7 +64,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const brandHref = withLocale(locale, isAdminArea ? "/admin" : "/");
-  const switchHref = withLocale(locale, isAdminArea ? "/" : "/admin");
+  const switchHref = withLocale(locale, "/");
 
   return (
     <Layout className={`antd-shell${isAdminArea ? " admin-antd-shell" : ""}`}>
@@ -87,11 +87,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Space size={10} className="header-actions">
             <span className="status-dot" />
             <span className="header-email">{email ?? dictionary.status}</span>
-            <Link href={switchHref}>
-              <Button size="small" icon={isAdminArea ? <Coffee size={14} /> : <Settings size={14} />}>
-                {isAdminArea ? dictionary.nav.frontend : dictionary.nav.admin}
-              </Button>
-            </Link>
+            {isAdminArea ? (
+              <Link href={switchHref}>
+                <Button size="small" icon={<Coffee size={14} />}>{dictionary.nav.frontend}</Button>
+              </Link>
+            ) : null}
             <Link href={nextLanguageHref}>
               <Button size="small" icon={<Languages size={14} />}>{dictionary.actions.language}</Button>
             </Link>

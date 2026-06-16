@@ -1,19 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Alert, Button, Card, Form, Input, InputNumber, Select, Space } from "antd";
-import { adminHeaders, getStoredAdminToken, setStoredAdminToken } from "@/lib/admin-client";
 import type { Locale } from "@/lib/i18n";
 
 export default function AdminUserGrants({ locale }: { locale: Locale }) {
-  const [adminToken, setAdminToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setAdminToken(getStoredAdminToken());
-  }, []);
 
   async function submit(values: { userId: string; planCode?: string; credits?: number; note?: string }) {
     setLoading(true);
@@ -22,7 +16,7 @@ export default function AdminUserGrants({ locale }: { locale: Locale }) {
     try {
       const response = await fetch("/api/admin/grants", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders(adminToken) },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values)
       });
       const payload = await response.json() as { error?: string };
@@ -40,23 +34,15 @@ export default function AdminUserGrants({ locale }: { locale: Locale }) {
       <Space orientation="vertical" size={14} className="full-width">
         {message ? <Alert type="success" showIcon message={message} /> : null}
         {error ? <Alert type="error" showIcon message={error} /> : null}
-        <Input.Password
-          value={adminToken}
-          onChange={(event) => {
-            setAdminToken(event.target.value);
-            setStoredAdminToken(event.target.value);
-          }}
-          placeholder="Admin Access Token"
-        />
         <Form layout="vertical" onFinish={submit}>
           <Form.Item name="userId" label="Supabase user id" rules={[{ required: true }]}>
             <Input placeholder="uuid" />
           </Form.Item>
           <Form.Item name="planCode" label={locale === "zh" ? "套餐" : "Plan"}>
             <Select allowClear options={[
-              { value: "free", label: "Free" },
-              { value: "balanced", label: "Balanced 39.9 CNY/mo" },
-              { value: "pro", label: "Pro 199 CNY/mo" }
+              { value: "free", label: locale === "zh" ? "普通用户组" : "Free users" },
+              { value: "standard", label: locale === "zh" ? "标准订阅用户组 39.9 CNY/mo" : "Standard subscribers 39.9 CNY/mo" },
+              { value: "premium", label: locale === "zh" ? "高级订阅用户组 199 CNY/mo" : "Premium subscribers 199 CNY/mo" }
             ]} />
           </Form.Item>
           <Form.Item name="credits" label={locale === "zh" ? "增加按量次数" : "Add credits"}>

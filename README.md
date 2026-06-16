@@ -30,10 +30,10 @@ AI_PROVIDER=siliconflow
 AI_BASE_URL=https://api.siliconflow.cn/v1
 AI_API_KEY=
 AI_VISION_MODEL=Qwen/Qwen2.5-VL-72B-Instruct
-ADMIN_ACCESS_TOKEN=
+ADMIN_EMAILS=
 ```
 
-`ADMIN_ACCESS_TOKEN` 用于保护写操作。生产环境如果不配置它，保存配置、上传分析、人工确认和批量导入都会被禁用。
+`ADMIN_EMAILS` 是管理后台白名单，多个邮箱可用逗号、分号或换行分隔。后台入口不在客户前台展示，管理员直接访问 `/zh/admin`，并用白名单邮箱通过 Supabase 邮箱验证码登录。
 
 ## Supabase
 
@@ -60,7 +60,7 @@ v1 默认使用 service role key 通过服务端 API 写入数据库。不要把
 3. 在 Vercel Project Settings 配置上述环境变量。
 4. 触发 Production Deploy。
 
-后台 `/admin/settings` 可用于本地写入 `.env.local`。在 Vercel 上，运行时文件系统不适合作为持久配置源，请以 Vercel 环境变量为准。
+后台 `/zh/admin/settings` 可用于本地写入 `.env.local`。在 Vercel 上，运行时文件系统不适合作为持久配置源，请以 Vercel 环境变量为准。
 
 ## 验证
 

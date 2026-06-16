@@ -1,10 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { groupFromPlan, type UserGroupCode } from "@/lib/user-groups";
 
 export type PlanCode = "free" | "balanced" | "pro";
 export type ChargeSource = "subscription" | "credits" | "free" | "none";
 
 export type QuotaSnapshot = {
   planCode: PlanCode;
+  userGroup: UserGroupCode;
   dailyLimit: number;
   monthlyLimit: number;
   dailyUsed: number;
@@ -43,7 +45,7 @@ export function getShanghaiUsageWindow(date = new Date()) {
   };
 }
 
-export async function getQuotaSnapshot(supabase: SupabaseClient, userId: string, now = new Date()): Promise<QuotaSnapshot> {
+export async function getQuotaSnapshot(supabase: SupabaseClient, userId: string, now = new Date(), email?: string | null): Promise<QuotaSnapshot> {
   const { usageDay, usageMonth } = getShanghaiUsageWindow(now);
   const plan = await getActivePlan(supabase, userId);
   const planLimits = PLAN_LIMITS[plan];
@@ -66,6 +68,7 @@ export async function getQuotaSnapshot(supabase: SupabaseClient, userId: string,
 
   return {
     planCode: plan,
+    userGroup: groupFromPlan(plan, email),
     dailyLimit: planLimits.dailyLimit,
     monthlyLimit: planLimits.monthlyLimit,
     dailyUsed,
@@ -207,6 +210,7 @@ function normalizeQuotaSnapshot(value: unknown): QuotaSnapshot {
     : "none";
   return {
     planCode,
+    userGroup: groupFromPlan(planCode),
     dailyLimit: toNumber(source.dailyLimit),
     monthlyLimit: toNumber(source.monthlyLimit),
     dailyUsed: toNumber(source.dailyUsed),

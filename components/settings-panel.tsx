@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, KeyRound, Save, ServerCog } from "lucide-react";
 import { Alert, Button, Card, Col, Input, Row, Select, Space } from "antd";
-import { adminHeaders, getStoredAdminToken, setStoredAdminToken } from "@/lib/admin-client";
 import type { PublicRuntimeConfig } from "@/lib/runtime-config";
 
 const SILICONFLOW_VISION_MODELS = [
@@ -42,6 +41,7 @@ type FormState = {
   aiApiKey: string;
   aiTextModel: string;
   aiVisionModel: string;
+  adminEmails: string;
 };
 
 export default function SettingsPanel() {
@@ -54,19 +54,17 @@ export default function SettingsPanel() {
     aiBaseUrl: "https://api.siliconflow.cn/v1",
     aiApiKey: "",
     aiTextModel: "Qwen/Qwen3-32B",
-    aiVisionModel: "Qwen/Qwen2.5-VL-72B-Instruct"
+    aiVisionModel: "Qwen/Qwen2.5-VL-72B-Instruct",
+    adminEmails: ""
   });
   const [current, setCurrent] = useState<PublicRuntimeConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [adminToken, setAdminToken] = useState("");
 
   useEffect(() => {
-    const storedToken = getStoredAdminToken();
-    setAdminToken(storedToken);
-    fetch("/api/settings", { headers: adminHeaders(storedToken) })
+    fetch("/api/settings")
       .then((response) => response.json())
       .then((config: PublicRuntimeConfig) => {
         setCurrent(config);
@@ -77,7 +75,8 @@ export default function SettingsPanel() {
           aiProvider: config.aiProvider,
           aiBaseUrl: config.aiBaseUrl,
           aiTextModel: config.aiTextModel,
-          aiVisionModel: config.aiVisionModel
+          aiVisionModel: config.aiVisionModel,
+          adminEmails: config.adminEmails
         }));
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "读取配置失败。"))
@@ -106,11 +105,10 @@ export default function SettingsPanel() {
     setSaving(true);
     setMessage(null);
     setError(null);
-    setStoredAdminToken(adminToken);
 
     const response = await fetch("/api/settings", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...adminHeaders(adminToken) },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form)
     });
 
@@ -140,11 +138,6 @@ export default function SettingsPanel() {
         <Space orientation="vertical" size={16} className="full-width">
           <Card title={<span className="card-title"><ServerCog size={20} />Supabase</span>}>
             <Row gutter={[16, 16]}>
-              <Col xs={24}>
-                <Field label="Admin Access Token（公开部署后写操作必需）">
-                  <Input.Password value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder="与 Vercel 环境变量 ADMIN_ACCESS_TOKEN 保持一致" />
-                </Field>
-              </Col>
               <Col xs={24} md={12}>
                 <Field label="Project URL">
                   <Input value={form.supabaseUrl} onChange={(event) => update("supabaseUrl", event.target.value)} placeholder="https://xxxx.supabase.co" />
@@ -225,6 +218,17 @@ export default function SettingsPanel() {
             </Row>
           </Card>
 
+          <Card title={<span className="card-title"><KeyRound size={20} />管理员访问</span>}>
+            <Field label="ADMIN_EMAILS（逗号、分号或换行分隔）">
+              <Input.TextArea
+                rows={3}
+                value={form.adminEmails}
+                onChange={(event) => update("adminEmails", event.target.value)}
+                placeholder="name@example.com, owner@example.com"
+              />
+            </Field>
+          </Card>
+
           <Space size={12} wrap>
             <Button type="primary" icon={<Save size={18} />} onClick={save} loading={saving}>
               保存配置
@@ -239,8 +243,8 @@ export default function SettingsPanel() {
         <Card title="配置说明">
           <Space orientation="vertical" size={16}>
             <div>
-              <h3>Admin Access Token</h3>
-              <p className="muted">公开部署后，保存配置、上传解析、确认案例和批量导入都会校验 `ADMIN_ACCESS_TOKEN`。令牌只保存在当前浏览器会话里，关闭标签页后需要重新输入。</p>
+              <h3>管理员白名单</h3>
+              <p className="muted">管理后台只校验当前登录邮箱是否在 `ADMIN_EMAILS` 环境变量中。前台不会显示后台入口。</p>
             </div>
             <div>
               <h3>这两个 Supabase 值是什么？</h3>

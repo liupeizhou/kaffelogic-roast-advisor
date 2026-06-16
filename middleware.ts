@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DEFAULT_LOCALE, isLocale, type Locale } from "@/lib/i18n";
 import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware";
+import { isAdminEmail } from "@/lib/user-groups";
 
 const PROTECTED_PATHS = ["/upload", "/editor", "/account", "/admin"];
 
@@ -18,7 +19,8 @@ export async function middleware(request: NextRequest) {
   }
 
   const { supabase, response } = createSupabaseMiddlewareClient(request);
-  const authenticated = await hasAuthenticatedSession(supabase);
+  const session = await getAuthenticatedSession(supabase);
+  const authenticated = session.authenticated;
 
   const localizedPath = pathname.replace(`/${firstSegment}`, "") || "/";
   if (!authenticated && PROTECTED_PATHS.some((path) => localizedPath === path || localizedPath.startsWith(`${path}/`))) {
@@ -28,14 +30,29 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  if (authenticated && isAdminPath(localizedPath) && !isAdminEmail(session.email)) {
+    const deniedUrl = request.nextUrl.clone();
+    deniedUrl.pathname = `/${firstSegment}/account`;
+    deniedUrl.searchParams.set("admin", "forbidden");
+    return NextResponse.redirect(deniedUrl);
+  }
+
   response.cookies.set("kaffelogic-locale", firstSegment, { path: "/", sameSite: "lax" });
   return response;
 }
 
-async function hasAuthenticatedSession(supabase: ReturnType<typeof createSupabaseMiddlewareClient>["supabase"]) {
-  if (!supabase) return false;
+async function getAuthenticatedSession(supabase: ReturnType<typeof createSupabaseMiddlewareClient>["supabase"]) {
+  if (!supabase) return { authenticated: false, email: "" };
   const { data, error } = await supabase.auth.getClaims();
-  return Boolean(!error && data?.claims?.sub);
+  const claims = data?.claims as { sub?: string; email?: string } | undefined;
+  return {
+    authenticated: Boolean(!error && claims?.sub),
+    email: claims?.email ?? ""
+  };
+}
+
+function isAdminPath(pathname: string) {
+  return pathname === "/admin" || pathname.startsWith("/admin/");
 }
 
 function resolvePreferredLocale(request: NextRequest): Locale {
