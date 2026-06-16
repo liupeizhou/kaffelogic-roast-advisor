@@ -29,8 +29,53 @@ export type RoastProfileRecord = {
   review_count?: number;
   rating_average?: number;
   leaderboard_score?: number;
+  initial_recommendation_score?: number | null;
+  initial_recommendation_notes?: string[];
+  tags?: CurveTagRecord[];
+  groups?: CurveGroupRecord[];
   created_at: string;
   updated_at: string;
+};
+
+export type CurveTagRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  color: string;
+  description: string | null;
+};
+
+export type CurveGroupRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  sort_order: number;
+};
+
+export type ProfileChangeLogRecord = {
+  id: string;
+  profile_id: string;
+  actor_id: string | null;
+  action: "taxonomy_update" | "initial_recommendation" | "rollback" | string;
+  before_snapshot: ProfileTaxonomySnapshot;
+  after_snapshot: ProfileTaxonomySnapshot;
+  note: string | null;
+  created_at: string;
+};
+
+export type ProfileTaxonomySnapshot = {
+  tagNames: string[];
+  groupNames: string[];
+  initialRecommendationScore: number | null;
+  initialRecommendationNotes: string[];
+};
+
+export type ProfileTaxonomyAdminPayload = {
+  profile: RoastProfileRecord;
+  allTags: CurveTagRecord[];
+  allGroups: CurveGroupRecord[];
+  changeLogs: ProfileChangeLogRecord[];
 };
 
 export type RoastProfileReviewRecord = {
@@ -164,6 +209,18 @@ export async function upsertRoastProfile(uploadId: string, profile: NonNullable<
   const supabase = await requireSupabaseAdmin();
   const tags = inferProfileTags(profile);
   const sourceScope = ownerId ? "user" : tags.sourceType === "official" ? "official" : "community";
+  const initialRecommendation = calculateInitialRecommendation({
+    description: profile.description,
+    recommended_level: profile.recommendedLevel,
+    expected_first_crack_temp: profile.expectedFirstCrackTemp,
+    expected_colour_change_temp: profile.expectedColourChangeTemp,
+    roast_levels: profile.roastLevels,
+    roast_curve_points: profile.roastCurvePoints,
+    fan_curve_points: profile.fanCurvePoints,
+    process_fit: tags.processFit,
+    target_brew: tags.targetBrew,
+    raw_fields: profile.rawFields
+  });
   const { data, error } = await supabase
     .from("roast_profiles")
     .upsert({
@@ -186,7 +243,9 @@ export async function upsertRoastProfile(uploadId: string, profile: NonNullable<
       roast_levels: profile.roastLevels,
       roast_curve_points: profile.roastCurvePoints,
       fan_curve_points: profile.fanCurvePoints,
-      raw_fields: profile.rawFields
+      raw_fields: profile.rawFields,
+      initial_recommendation_score: initialRecommendation.score,
+      initial_recommendation_notes: initialRecommendation.notes
     }, { onConflict: "upload_id" })
     .select("id")
     .single();
@@ -311,6 +370,8 @@ export async function listRoastProfiles(limit = 120, ownerId?: string | null): P
       "review_count",
       "rating_average",
       "leaderboard_score",
+      "initial_recommendation_score",
+      "initial_recommendation_notes",
       "created_at",
       "updated_at"
     ].join(","))
@@ -319,7 +380,7 @@ export async function listRoastProfiles(limit = 120, ownerId?: string | null): P
   query = ownerId ? query.or(`visibility.in.(public,unlisted),owner_id.eq.${ownerId}`) : query.in("visibility", ["public", "unlisted"]);
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as unknown as RoastProfileRecord[];
+  return attachProfileTaxonomy((data ?? []) as unknown as RoastProfileRecord[]);
 }
 
 export async function listRoastProfileLeaderboard(limit = 50, ownerId?: string | null): Promise<RoastProfileRecord[]> {
@@ -351,6 +412,8 @@ export async function listRoastProfileLeaderboard(limit = 50, ownerId?: string |
       "review_count",
       "rating_average",
       "leaderboard_score",
+      "initial_recommendation_score",
+      "initial_recommendation_notes",
       "created_at",
       "updated_at"
     ].join(","))
@@ -360,7 +423,7 @@ export async function listRoastProfileLeaderboard(limit = 50, ownerId?: string |
   query = ownerId ? query.or(`visibility.in.(public,unlisted),owner_id.eq.${ownerId}`) : query.in("visibility", ["public", "unlisted"]);
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as unknown as RoastProfileRecord[];
+  return attachProfileTaxonomy((data ?? []) as unknown as RoastProfileRecord[]);
 }
 
 export async function getRoastProfile(profileId: string, ownerId?: string | null): Promise<RoastProfileRecord | null> {
@@ -372,7 +435,409 @@ export async function getRoastProfile(profileId: string, ownerId?: string | null
   query = ownerId ? query.or(`visibility.in.(public,unlisted),owner_id.eq.${ownerId}`) : query.in("visibility", ["public", "unlisted"]);
   const { data, error } = await query.maybeSingle();
   if (error) throw error;
-  return data as unknown as RoastProfileRecord | null;
+  const profile = data as unknown as RoastProfileRecord | null;
+  if (!profile) return null;
+  const [withTaxonomy] = await attachProfileTaxonomy([profile]);
+  return withTaxonomy ?? profile;
+}
+
+async function attachProfileTaxonomy(profiles: RoastProfileRecord[]): Promise<RoastProfileRecord[]> {
+  const profileIds = profiles.map((profile) => profile.id).filter(Boolean);
+  if (!profileIds.length) return profiles;
+  const supabase = await requireSupabaseAdmin();
+  const [tagLinksResult, groupLinksResult] = await Promise.all([
+    supabase
+      .from("roast_profile_tag_links")
+      .select("profile_id,curve_tags(id,name,slug,color,description)")
+      .in("profile_id", profileIds),
+    supabase
+      .from("roast_profile_group_links")
+      .select("profile_id,curve_groups(id,name,slug,description,sort_order)")
+      .in("profile_id", profileIds)
+  ]);
+
+  if (tagLinksResult.error) throw tagLinksResult.error;
+  if (groupLinksResult.error) throw groupLinksResult.error;
+
+  const tagsByProfile = new Map<string, CurveTagRecord[]>();
+  for (const link of tagLinksResult.data ?? []) {
+    const tag = Array.isArray(link.curve_tags) ? link.curve_tags[0] : link.curve_tags;
+    if (!tag) continue;
+    const items = tagsByProfile.get(String(link.profile_id)) ?? [];
+    items.push(tag as CurveTagRecord);
+    tagsByProfile.set(String(link.profile_id), items);
+  }
+
+  const groupsByProfile = new Map<string, CurveGroupRecord[]>();
+  for (const link of groupLinksResult.data ?? []) {
+    const group = Array.isArray(link.curve_groups) ? link.curve_groups[0] : link.curve_groups;
+    if (!group) continue;
+    const items = groupsByProfile.get(String(link.profile_id)) ?? [];
+    items.push(group as CurveGroupRecord);
+    groupsByProfile.set(String(link.profile_id), items);
+  }
+
+  return profiles.map((profile) => ({
+    ...profile,
+    initial_recommendation_notes: normalizeNotes(profile.initial_recommendation_notes),
+    tags: tagsByProfile.get(profile.id) ?? [],
+    groups: (groupsByProfile.get(profile.id) ?? []).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+  }));
+}
+
+export async function getProfileTaxonomyAdmin(profileId: string): Promise<ProfileTaxonomyAdminPayload> {
+  const supabase = await requireSupabaseAdmin();
+  const [profileResult, tagsResult, groupsResult, logsResult] = await Promise.all([
+    supabase.from("roast_profiles").select("*").eq("id", profileId).maybeSingle(),
+    supabase.from("curve_tags").select("id,name,slug,color,description").order("name", { ascending: true }),
+    supabase.from("curve_groups").select("id,name,slug,description,sort_order").order("sort_order", { ascending: true }).order("name", { ascending: true }),
+    supabase
+      .from("roast_profile_change_logs")
+      .select("id,profile_id,actor_id,action,before_snapshot,after_snapshot,note,created_at")
+      .eq("profile_id", profileId)
+      .order("created_at", { ascending: false })
+      .limit(30)
+  ]);
+
+  if (profileResult.error) throw profileResult.error;
+  if (tagsResult.error) throw tagsResult.error;
+  if (groupsResult.error) throw groupsResult.error;
+  if (logsResult.error) throw logsResult.error;
+  if (!profileResult.data) throw new Error("曲线不存在。");
+
+  const [profile] = await attachProfileTaxonomy([profileResult.data as unknown as RoastProfileRecord]);
+  return {
+    profile,
+    allTags: (tagsResult.data ?? []) as unknown as CurveTagRecord[],
+    allGroups: (groupsResult.data ?? []) as unknown as CurveGroupRecord[],
+    changeLogs: (logsResult.data ?? []).map((log) => ({
+      ...log,
+      before_snapshot: normalizeSnapshot(log.before_snapshot),
+      after_snapshot: normalizeSnapshot(log.after_snapshot)
+    })) as ProfileChangeLogRecord[]
+  };
+}
+
+export async function updateProfileTaxonomyAdmin(input: {
+  profileId: string;
+  actorId: string;
+  tagNames: string[];
+  groupNames: string[];
+  initialScore: number | null;
+  initialNotes: string[];
+  note?: string | null;
+  action?: "taxonomy_update" | "initial_recommendation";
+}): Promise<ProfileTaxonomyAdminPayload> {
+  const snapshot: ProfileTaxonomySnapshot = {
+    tagNames: normalizeNameList(input.tagNames),
+    groupNames: normalizeNameList(input.groupNames),
+    initialRecommendationScore: normalizeScore(input.initialScore),
+    initialRecommendationNotes: normalizeNotes(input.initialNotes)
+  };
+  const before = await getProfileTaxonomySnapshot(input.profileId);
+  await applyProfileTaxonomySnapshot(input.profileId, input.actorId, snapshot);
+  const after = await getProfileTaxonomySnapshot(input.profileId);
+  await insertProfileChangeLog({
+    profileId: input.profileId,
+    actorId: input.actorId,
+    action: input.action ?? "taxonomy_update",
+    before,
+    after,
+    note: input.note ?? null
+  });
+  return getProfileTaxonomyAdmin(input.profileId);
+}
+
+export async function applyInitialRecommendationAdmin(input: {
+  profileId: string;
+  actorId: string;
+}): Promise<ProfileTaxonomyAdminPayload> {
+  const current = await getProfileTaxonomyAdmin(input.profileId);
+  const recommendation = calculateInitialRecommendation(current.profile);
+  return updateProfileTaxonomyAdmin({
+    profileId: input.profileId,
+    actorId: input.actorId,
+    tagNames: current.profile.tags?.map((tag) => tag.name) ?? [],
+    groupNames: current.profile.groups?.map((group) => group.name) ?? [],
+    initialScore: recommendation.score,
+    initialNotes: recommendation.notes,
+    action: "initial_recommendation",
+    note: "系统重新生成初始评分推荐。"
+  });
+}
+
+export async function rollbackProfileTaxonomyAdmin(input: {
+  profileId: string;
+  actorId: string;
+  changeId: string;
+}): Promise<ProfileTaxonomyAdminPayload> {
+  const supabase = await requireSupabaseAdmin();
+  const { data: log, error } = await supabase
+    .from("roast_profile_change_logs")
+    .select("id,profile_id,before_snapshot")
+    .eq("id", input.changeId)
+    .eq("profile_id", input.profileId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!log) throw new Error("可回滚的变更记录不存在。");
+
+  const before = await getProfileTaxonomySnapshot(input.profileId);
+  const target = normalizeSnapshot(log.before_snapshot);
+  await applyProfileTaxonomySnapshot(input.profileId, input.actorId, target);
+  const after = await getProfileTaxonomySnapshot(input.profileId);
+  await insertProfileChangeLog({
+    profileId: input.profileId,
+    actorId: input.actorId,
+    action: "rollback",
+    before,
+    after,
+    note: `回滚到变更 ${input.changeId} 之前的分类与评分快照。`
+  });
+  return getProfileTaxonomyAdmin(input.profileId);
+}
+
+async function getProfileTaxonomySnapshot(profileId: string): Promise<ProfileTaxonomySnapshot> {
+  const payload = await getProfileTaxonomyAdmin(profileId);
+  return {
+    tagNames: payload.profile.tags?.map((tag) => tag.name) ?? [],
+    groupNames: payload.profile.groups?.map((group) => group.name) ?? [],
+    initialRecommendationScore: normalizeScore(payload.profile.initial_recommendation_score ?? null),
+    initialRecommendationNotes: normalizeNotes(payload.profile.initial_recommendation_notes)
+  };
+}
+
+async function applyProfileTaxonomySnapshot(profileId: string, actorId: string, snapshot: ProfileTaxonomySnapshot) {
+  const supabase = await requireSupabaseAdmin();
+  const [tags, groups] = await Promise.all([
+    ensureCurveTags(snapshot.tagNames, actorId),
+    ensureCurveGroups(snapshot.groupNames, actorId)
+  ]);
+
+  const [deleteTags, deleteGroups, updateProfile] = await Promise.all([
+    supabase.from("roast_profile_tag_links").delete().eq("profile_id", profileId),
+    supabase.from("roast_profile_group_links").delete().eq("profile_id", profileId),
+    supabase
+      .from("roast_profiles")
+      .update({
+        initial_recommendation_score: snapshot.initialRecommendationScore,
+        initial_recommendation_notes: snapshot.initialRecommendationNotes,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", profileId)
+  ]);
+  if (deleteTags.error) throw deleteTags.error;
+  if (deleteGroups.error) throw deleteGroups.error;
+  if (updateProfile.error) throw updateProfile.error;
+
+  if (tags.length) {
+    const { error } = await supabase.from("roast_profile_tag_links").insert(tags.map((tag) => ({
+      profile_id: profileId,
+      tag_id: tag.id,
+      created_by: actorId
+    })));
+    if (error) throw error;
+  }
+  if (groups.length) {
+    const { error } = await supabase.from("roast_profile_group_links").insert(groups.map((group) => ({
+      profile_id: profileId,
+      group_id: group.id,
+      created_by: actorId
+    })));
+    if (error) throw error;
+  }
+}
+
+async function ensureCurveTags(names: string[], actorId: string): Promise<CurveTagRecord[]> {
+  const supabase = await requireSupabaseAdmin();
+  const cleanNames = normalizeNameList(names);
+  if (!cleanNames.length) return [];
+  const payload = cleanNames.map((name) => ({
+    name,
+    slug: slugifyTaxonomy(name),
+    created_by: actorId
+  }));
+  const { data, error } = await supabase
+    .from("curve_tags")
+    .upsert(payload, { onConflict: "slug" })
+    .select("id,name,slug,color,description");
+  if (error) throw error;
+  return (data ?? []) as unknown as CurveTagRecord[];
+}
+
+async function ensureCurveGroups(names: string[], actorId: string): Promise<CurveGroupRecord[]> {
+  const supabase = await requireSupabaseAdmin();
+  const cleanNames = normalizeNameList(names);
+  if (!cleanNames.length) return [];
+  const payload = cleanNames.map((name, index) => ({
+    name,
+    slug: slugifyTaxonomy(name),
+    sort_order: index * 10,
+    created_by: actorId
+  }));
+  const { data, error } = await supabase
+    .from("curve_groups")
+    .upsert(payload, { onConflict: "slug" })
+    .select("id,name,slug,description,sort_order");
+  if (error) throw error;
+  return (data ?? []) as unknown as CurveGroupRecord[];
+}
+
+async function insertProfileChangeLog(input: {
+  profileId: string;
+  actorId: string;
+  action: string;
+  before: ProfileTaxonomySnapshot;
+  after: ProfileTaxonomySnapshot;
+  note: string | null;
+}) {
+  const supabase = await requireSupabaseAdmin();
+  const { error } = await supabase.from("roast_profile_change_logs").insert({
+    profile_id: input.profileId,
+    actor_id: input.actorId,
+    action: input.action,
+    before_snapshot: input.before,
+    after_snapshot: input.after,
+    note: input.note
+  });
+  if (error) throw error;
+}
+
+export function calculateInitialRecommendation(profile: Partial<RoastProfileRecord> & {
+  raw_fields?: Record<string, string>;
+}): { score: number; notes: string[] } {
+  let score = 50;
+  const notes: string[] = [];
+  const roastPoints = profile.roast_curve_points ?? [];
+  const fanPoints = profile.fan_curve_points ?? [];
+
+  if (roastPoints.length >= 12) {
+    score += 14;
+    notes.push("温度曲线点位较完整，适合进入资料库做推荐。");
+  } else if (roastPoints.length >= 6) {
+    score += 8;
+    notes.push("温度曲线有基础点位，可用于初步推荐。");
+  } else {
+    score -= 8;
+    notes.push("温度曲线点位偏少，建议人工确认曲线来源和适用范围。");
+  }
+
+  if (fanPoints.length >= 4) {
+    score += 8;
+    notes.push("风速曲线可读，有助于判断热量与排湿策略。");
+  } else {
+    score -= 4;
+    notes.push("风速曲线信息较少，推荐时需保守使用。");
+  }
+
+  if (typeof profile.recommended_level === "number") {
+    score += 8;
+    notes.push(`已标注推荐 Level ${profile.recommended_level}。`);
+  } else {
+    score -= 6;
+    notes.push("缺少推荐 Level，建议管理组补充。");
+  }
+
+  if (typeof profile.expected_first_crack_temp === "number") {
+    score += 8;
+    notes.push("包含预计一爆温度，可用于烘焙节点校验。");
+  } else {
+    score -= 4;
+    notes.push("缺少预计一爆温度，推荐解释可信度会降低。");
+  }
+
+  if (typeof profile.expected_colour_change_temp === "number") {
+    score += 4;
+    notes.push("包含转黄/颜色变化预期，适合做前段判断。");
+  }
+
+  if (Array.isArray(profile.roast_levels) && profile.roast_levels.length >= 3) {
+    score += 5;
+    notes.push("Roast levels 信息完整，便于映射不同烘焙度。");
+  }
+
+  if (profile.description && profile.description.trim().length >= 40) {
+    score += 6;
+    notes.push("说明文本较完整，可支持用户理解适用范围。");
+  } else {
+    score -= 3;
+    notes.push("曲线说明偏少，建议补充处理法、豆种和风险备注。");
+  }
+
+  const processFit = String(profile.process_fit ?? "");
+  if (["natural", "washed", "honey", "experimental"].includes(processFit)) {
+    score += 5;
+    notes.push(`已识别处理法适配：${processFit}。`);
+  }
+
+  const rawFieldCount = Object.keys(profile.raw_fields ?? {}).length;
+  if (rawFieldCount >= 8) {
+    score += 4;
+    notes.push("原始字段保留较完整，后续可回写 .kpro。");
+  }
+
+  return {
+    score: Math.max(0, Math.min(100, Math.round(score))),
+    notes: normalizeNotes(notes).slice(0, 8)
+  };
+}
+
+function normalizeSnapshot(value: unknown): ProfileTaxonomySnapshot {
+  const snapshot = value as Partial<ProfileTaxonomySnapshot> | null | undefined;
+  return {
+    tagNames: normalizeNameList(snapshot?.tagNames ?? []),
+    groupNames: normalizeNameList(snapshot?.groupNames ?? []),
+    initialRecommendationScore: normalizeScore(snapshot?.initialRecommendationScore ?? null),
+    initialRecommendationNotes: normalizeNotes(snapshot?.initialRecommendationNotes)
+  };
+}
+
+function normalizeNameList(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const item of values) {
+    const name = String(item ?? "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name.slice(0, 48));
+  }
+  return names.slice(0, 24);
+}
+
+function normalizeNotes(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [];
+  return values
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function normalizeScore(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const score = Number(value);
+  if (!Number.isFinite(score)) return null;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function slugifyTaxonomy(name: string): string {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base || `tag-${hashString(name)}`;
+}
+
+function hashString(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
 }
 
 export async function recordRoastProfileDownload(profileId: string, ownerId?: string | null) {

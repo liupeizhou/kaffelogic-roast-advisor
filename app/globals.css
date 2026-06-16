@@ -735,6 +735,24 @@ h3 {
   font-weight: 750;
 }
 
+.profile-list-item .profile-list-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: inherit;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .empty-profile-list {
   padding: 18px;
   border: 1px dashed #cfd8d0;

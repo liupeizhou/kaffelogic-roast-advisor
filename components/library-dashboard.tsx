@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Alert, Button, Card, Col, Collapse, Input, Row, Space, Spin, Statistic, Steps, Tag, Tooltip, Upload } from "antd";
+import { Alert, Button, Card, Col, Collapse, Input, InputNumber, List, Row, Select, Space, Spin, Statistic, Steps, Tag, Tooltip, Upload } from "antd";
 import type { UploadProps } from "antd";
 import { Database, Download, FolderInput, RefreshCw, Search, UploadCloud } from "lucide-react";
 import AnimatedRoastCurve, { type AnimatedRoastProfile } from "@/components/animated-roast-curve";
@@ -34,6 +34,19 @@ type ImportResponse = {
   error?: string;
 };
 
+type TaxonomyResponse = {
+  profile: RoastProfileRecord;
+  allTags: Array<{ id: string; name: string }>;
+  allGroups: Array<{ id: string; name: string }>;
+  changeLogs: Array<{
+    id: string;
+    action: string;
+    note: string | null;
+    created_at: string;
+  }>;
+  error?: string;
+};
+
 const DEFAULT_REFERENCE_ROOT = "/Volumes/Extreme SSD/01_下载归档_Downloads/kaffelogic项目";
 
 export default function LibraryDashboard({ locale = "zh", mode = "customer" }: { locale?: Locale; mode?: "customer" | "admin" }) {
@@ -48,6 +61,17 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportResponse | null>(null);
+  const [taxonomyLoading, setTaxonomyLoading] = useState(false);
+  const [taxonomySaving, setTaxonomySaving] = useState(false);
+  const [taxonomyError, setTaxonomyError] = useState<string | null>(null);
+  const [taxonomyMessage, setTaxonomyMessage] = useState<string | null>(null);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [availableGroups, setAvailableGroups] = useState<string[]>([]);
+  const [tagNames, setTagNames] = useState<string[]>([]);
+  const [groupNames, setGroupNames] = useState<string[]>([]);
+  const [initialScore, setInitialScore] = useState<number | null>(null);
+  const [initialNotesText, setInitialNotesText] = useState("");
+  const [changeLogs, setChangeLogs] = useState<TaxonomyResponse["changeLogs"]>([]);
 
   const loadProfiles = useCallback(async () => {
     setLoading(true);
@@ -127,6 +151,33 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
     void loadProfiles();
   }, [loadProfiles]);
 
+  const applyTaxonomyPayload = useCallback((payload: TaxonomyResponse) => {
+    setAvailableTags(payload.allTags.map((tag) => tag.name));
+    setAvailableGroups(payload.allGroups.map((group) => group.name));
+    setTagNames(payload.profile.tags?.map((tag) => tag.name) ?? []);
+    setGroupNames(payload.profile.groups?.map((group) => group.name) ?? []);
+    setInitialScore(payload.profile.initial_recommendation_score ?? null);
+    setInitialNotesText((payload.profile.initial_recommendation_notes ?? []).join("\n"));
+    setChangeLogs(payload.changeLogs);
+    setProfiles((current) => current.map((profile) => profile.id === payload.profile.id ? payload.profile : profile));
+  }, []);
+
+  const loadTaxonomy = useCallback(async (profileId: string) => {
+    if (!isAdmin) return;
+    setTaxonomyLoading(true);
+    setTaxonomyError(null);
+    try {
+      const response = await fetch(`/api/admin/profiles/${profileId}/taxonomy`, { cache: "no-store" });
+      const payload = await response.json() as TaxonomyResponse;
+      if (!response.ok) throw new Error(payload.error ?? (zh ? "读取分类配置失败。" : "Failed to load taxonomy."));
+      applyTaxonomyPayload(payload);
+    } catch (loadError) {
+      setTaxonomyError(loadError instanceof Error ? loadError.message : (zh ? "读取分类配置失败。" : "Failed to load taxonomy."));
+    } finally {
+      setTaxonomyLoading(false);
+    }
+  }, [applyTaxonomyPayload, isAdmin, zh]);
+
   const filteredProfiles = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return profiles;
@@ -137,7 +188,9 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
       profile.process_fit,
       profile.target_brew,
       profile.source_type,
-      profile.description
+      profile.description,
+      ...(profile.tags?.map((tag) => tag.name) ?? []),
+      ...(profile.groups?.map((group) => group.name) ?? [])
     ].some((value) => String(value ?? "").toLowerCase().includes(normalized)));
   }, [profiles, query]);
 
@@ -146,6 +199,85 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
   const altitudeCount = profiles.filter((profile) => profile.altitude_range).length;
   const naturalCount = profiles.filter((profile) => profile.process_fit === "natural").length;
   const washedCount = profiles.filter((profile) => profile.process_fit === "washed").length;
+
+  useEffect(() => {
+    setTaxonomyMessage(null);
+    if (isAdmin && selectedProfile?.id) {
+      void loadTaxonomy(selectedProfile.id);
+    }
+  }, [isAdmin, loadTaxonomy, selectedProfile?.id]);
+
+  async function saveTaxonomy() {
+    if (!selectedProfile) return;
+    setTaxonomySaving(true);
+    setTaxonomyError(null);
+    setTaxonomyMessage(null);
+    try {
+      const response = await fetch(`/api/admin/profiles/${selectedProfile.id}/taxonomy`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tagNames,
+          groupNames,
+          initialScore,
+          initialNotes: initialNotesText.split("\n").map((line) => line.trim()).filter(Boolean),
+          note: zh ? "管理后台保存分类、分组与初始评分。" : "Admin taxonomy and initial recommendation update."
+        })
+      });
+      const payload = await response.json() as TaxonomyResponse;
+      if (!response.ok) throw new Error(payload.error ?? (zh ? "保存分类配置失败。" : "Failed to save taxonomy."));
+      applyTaxonomyPayload(payload);
+      setTaxonomyMessage(zh ? "已保存分类、分组与初始评分，并写入变更记录。" : "Saved taxonomy, groups, initial score, and audit log.");
+    } catch (saveError) {
+      setTaxonomyError(saveError instanceof Error ? saveError.message : (zh ? "保存分类配置失败。" : "Failed to save taxonomy."));
+    } finally {
+      setTaxonomySaving(false);
+    }
+  }
+
+  async function generateInitialRecommendation() {
+    if (!selectedProfile) return;
+    setTaxonomySaving(true);
+    setTaxonomyError(null);
+    setTaxonomyMessage(null);
+    try {
+      const response = await fetch(`/api/admin/profiles/${selectedProfile.id}/taxonomy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "recommend" })
+      });
+      const payload = await response.json() as TaxonomyResponse;
+      if (!response.ok) throw new Error(payload.error ?? (zh ? "生成初始评分失败。" : "Failed to generate initial score."));
+      applyTaxonomyPayload(payload);
+      setTaxonomyMessage(zh ? "已根据当前曲线字段重新生成初始推荐评分。" : "Initial recommendation score regenerated.");
+    } catch (saveError) {
+      setTaxonomyError(saveError instanceof Error ? saveError.message : (zh ? "生成初始评分失败。" : "Failed to generate initial score."));
+    } finally {
+      setTaxonomySaving(false);
+    }
+  }
+
+  async function rollbackTaxonomy(changeId: string) {
+    if (!selectedProfile) return;
+    setTaxonomySaving(true);
+    setTaxonomyError(null);
+    setTaxonomyMessage(null);
+    try {
+      const response = await fetch(`/api/admin/profiles/${selectedProfile.id}/taxonomy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "rollback", changeId })
+      });
+      const payload = await response.json() as TaxonomyResponse;
+      if (!response.ok) throw new Error(payload.error ?? (zh ? "回滚失败。" : "Rollback failed."));
+      applyTaxonomyPayload(payload);
+      setTaxonomyMessage(zh ? "已回滚到所选变更前的分类和评分快照。" : "Rolled back to the snapshot before that change.");
+    } catch (saveError) {
+      setTaxonomyError(saveError instanceof Error ? saveError.message : (zh ? "回滚失败。" : "Rollback failed."));
+    } finally {
+      setTaxonomySaving(false);
+    }
+  }
 
   return (
     <div className="library-workbench">
@@ -257,6 +389,12 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
                     <strong>{profile.display_name}</strong>
                     <span>{profile.designer || profile.file_name}</span>
                     <small>{profile.target_brew} · {profile.process_fit} · L{profile.recommended_level ?? "?"}</small>
+                    {profile.tags?.length || profile.groups?.length ? (
+                      <span className="profile-list-tags">
+                        {profile.groups?.slice(0, 2).map((group) => <Tag key={group.id}>{group.name}</Tag>)}
+                        {profile.tags?.slice(0, 3).map((tag) => <Tag key={tag.id} color={tag.color || "green"}>{tag.name}</Tag>)}
+                      </span>
+                    ) : null}
                   </button>
                 ))}
               </div>
@@ -292,6 +430,11 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
                   </Link>
                   <Tag color="gold">{zh ? "下载" : "Downloads"} {selectedProfile.download_count ?? 0}</Tag>
                   <Tag color="blue">{zh ? "评分" : "Rating"} {Number(selectedProfile.rating_average ?? 0).toFixed(1)}</Tag>
+                  {typeof selectedProfile.initial_recommendation_score === "number" ? (
+                    <Tag color="green">{zh ? "初始推荐" : "Initial"} {selectedProfile.initial_recommendation_score}/100</Tag>
+                  ) : null}
+                  {selectedProfile.groups?.map((group) => <Tag key={group.id}>{group.name}</Tag>)}
+                  {selectedProfile.tags?.map((tag) => <Tag key={tag.id} color={tag.color || "green"}>{tag.name}</Tag>)}
                 </Space>
                 <div className="detail-grid">
                   <Detail label={zh ? "文件名" : "File name"} value={selectedProfile.file_name} />
@@ -300,12 +443,96 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
                   <Detail label={zh ? "预计一爆温度" : "Expected FC"} value={selectedProfile.expected_first_crack_temp ? `${selectedProfile.expected_first_crack_temp} C` : "N/A"} />
                   <Detail label={zh ? "温度点数" : "Temperature points"} value={selectedProfile.roast_curve_points.length} />
                   <Detail label={zh ? "风速点数" : "Fan points"} value={selectedProfile.fan_curve_points.length} />
+                  <Detail label={zh ? "初始推荐评分" : "Initial recommendation"} value={typeof selectedProfile.initial_recommendation_score === "number" ? `${selectedProfile.initial_recommendation_score}/100` : "N/A"} />
+                  <Detail label={zh ? "分组" : "Groups"} value={selectedProfile.groups?.map((group) => group.name).join("、") || "N/A"} />
+                  <Detail label={zh ? "标签" : "Tags"} value={selectedProfile.tags?.map((tag) => tag.name).join("、") || "N/A"} />
                 </div>
+                {selectedProfile.initial_recommendation_notes?.length ? (
+                  <ul className="list">
+                    {selectedProfile.initial_recommendation_notes.map((note) => <li key={note}>{note}</li>)}
+                  </ul>
+                ) : null}
               </Space>
             ) : (
               <span className="muted">{zh ? "连接 Supabase 并导入 `.kpro` 后，这里会显示真实解析字段。" : "Connect Supabase and import .kpro files to show parsed fields here."}</span>
             )}
           </Card>
+
+          {isAdmin && selectedProfile ? (
+            <Card className="profile-detail-card" title={zh ? "管理组：标签、分组、评分与回滚" : "Management: tags, groups, score and rollback"}>
+              <Spin spinning={taxonomyLoading}>
+                <Space orientation="vertical" size={14} className="full-width">
+                  {taxonomyError ? <Alert type="warning" showIcon message={taxonomyError} /> : null}
+                  {taxonomyMessage ? <Alert type="success" showIcon message={taxonomyMessage} /> : null}
+                  <Row gutter={[12, 12]}>
+                    <Col xs={24} md={12}>
+                      <label className="form-label">{zh ? "标签" : "Tags"}</label>
+                      <Select
+                        mode="tags"
+                        className="full-width"
+                        placeholder={zh ? "例如：日晒、高海拔、花果调" : "e.g. Natural, high altitude, floral"}
+                        value={tagNames}
+                        options={availableTags.map((name) => ({ value: name, label: name }))}
+                        onChange={setTagNames}
+                      />
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <label className="form-label">{zh ? "分组" : "Groups"}</label>
+                      <Select
+                        mode="tags"
+                        className="full-width"
+                        placeholder={zh ? "例如：官方推荐、用户精选、测试中" : "e.g. Official, curated, testing"}
+                        value={groupNames}
+                        options={availableGroups.map((name) => ({ value: name, label: name }))}
+                        onChange={setGroupNames}
+                      />
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <label className="form-label">{zh ? "初始推荐评分" : "Initial score"}</label>
+                      <InputNumber min={0} max={100} className="full-width" value={initialScore} onChange={(value) => setInitialScore(value)} />
+                    </Col>
+                    <Col xs={24} md={16}>
+                      <label className="form-label">{zh ? "推荐备注" : "Recommendation notes"}</label>
+                      <Input.TextArea
+                        rows={4}
+                        value={initialNotesText}
+                        onChange={(event) => setInitialNotesText(event.target.value)}
+                        placeholder={zh ? "每行一条，保存时进入变更记录。" : "One note per line. Saved into the audit log."}
+                      />
+                    </Col>
+                  </Row>
+                  <Space wrap>
+                    <Button type="primary" onClick={saveTaxonomy} loading={taxonomySaving}>
+                      {zh ? "保存分类与评分" : "Save taxonomy"}
+                    </Button>
+                    <Button onClick={generateInitialRecommendation} loading={taxonomySaving}>
+                      {zh ? "生成初始评分推荐" : "Generate initial score"}
+                    </Button>
+                  </Space>
+                  <List
+                    size="small"
+                    header={zh ? "变更记录（可回滚到某次变更前）" : "Audit log (rollback to before a change)"}
+                    dataSource={changeLogs}
+                    locale={{ emptyText: zh ? "暂无变更记录" : "No changes yet" }}
+                    renderItem={(item) => (
+                      <List.Item
+                        actions={[
+                          <Button key="rollback" size="small" onClick={() => rollbackTaxonomy(item.id)} loading={taxonomySaving}>
+                            {zh ? "回滚" : "Rollback"}
+                          </Button>
+                        ]}
+                      >
+                        <List.Item.Meta
+                          title={`${actionLabel(item.action, zh)} · ${new Date(item.created_at).toLocaleString(zh ? "zh-CN" : "en-US", { hour12: false })}`}
+                          description={item.note || (zh ? "无备注" : "No note")}
+                        />
+                      </List.Item>
+                    )}
+                  />
+                </Space>
+              </Spin>
+            </Card>
+          ) : null}
         </main>
       </div>
     </div>
@@ -319,4 +546,11 @@ function Detail({ label, value }: { label: string; value: string | number }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function actionLabel(action: string, zh: boolean) {
+  if (action === "taxonomy_update") return zh ? "分类/评分更新" : "Taxonomy update";
+  if (action === "initial_recommendation") return zh ? "初始评分推荐" : "Initial recommendation";
+  if (action === "rollback") return zh ? "回滚" : "Rollback";
+  return action;
 }
