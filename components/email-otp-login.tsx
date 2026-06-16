@@ -60,8 +60,9 @@ export default function EmailOtpLogin({ locale }: { locale: Locale }) {
       });
       if (verifyError) throw verifyError;
       const next = searchParams.get("next");
-      router.push(next && next.startsWith("/") ? next : withLocale(locale, "/account"));
+      const destination = next && next.startsWith("/") ? next : withLocale(locale, "/");
       router.refresh();
+      window.location.assign(destination);
     } catch (verifyError) {
       setError(verifyError instanceof Error ? verifyError.message : "Failed to verify code.");
     } finally {

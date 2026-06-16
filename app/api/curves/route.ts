@@ -39,6 +39,7 @@ function normalizeProfile(value: unknown): KproProfile {
   if (typeof value === "string") return parseKpro(value);
   const profile = value as Partial<KproProfile> | null;
   if (!profile) throw new Error("缺少曲线数据。");
+  if (!profile.shortName?.trim()) throw new Error("曲线名字必填。");
   return {
     fileName: profile.fileName || `${profile.shortName || "edited-profile"}.kpro`,
     shortName: profile.shortName ?? null,

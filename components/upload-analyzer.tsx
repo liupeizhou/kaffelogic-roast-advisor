@@ -1,12 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { CheckCircle2, FileUp, Save, UploadCloud } from "lucide-react";
-import { Alert, Button, Card, Col, Descriptions, Divider, Image, List, Row, Space, Statistic, Tag, Upload } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, FileUp, History, Save, Star, UploadCloud } from "lucide-react";
+import { Alert, Button, Card, Col, Descriptions, Divider, Empty, Image, List, Row, Select, Space, Statistic, Tag, Upload } from "antd";
 import type { UploadProps } from "antd";
 import CurveChart from "@/components/curve-chart";
 import { getDictionary, type Locale } from "@/lib/i18n";
-import type { RoastLogAnalysis, UploadAnalysisResult } from "@/lib/types";
+import type { CurveScoreResult } from "@/lib/curve-scoring";
+import type { CurveDocumentRecord, RoastProfileRecord, UploadHistoryItem } from "@/lib/roast-persistence";
+import type { KproProfile, RoastLogAnalysis, UploadAnalysisResult } from "@/lib/types";
+
+type ReferenceOption = {
+  label: string;
+  options: Array<{ label: string; value: string }>;
+};
 
 export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
   const t = getDictionary(locale);
@@ -16,8 +23,19 @@ export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [history, setHistory] = useState<UploadHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [referenceOptions, setReferenceOptions] = useState<ReferenceOption[]>([]);
+  const [selectedReference, setSelectedReference] = useState<string | null>(null);
+  const [scoring, setScoring] = useState(false);
+  const [scoreResult, setScoreResult] = useState<(CurveScoreResult & { id?: string; createdAt?: string }) | null>(null);
 
   const isImage = useMemo(() => file?.type.startsWith("image/") ?? false, [file]);
+
+  useEffect(() => {
+    void loadHistory();
+    void loadReferenceOptions();
+  }, []);
 
   function onFileChange(nextFile: File | null) {
     setFile(nextFile);
@@ -62,6 +80,8 @@ export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
       return;
     }
     setResult(payload);
+    setScoreResult(null);
+    void loadHistory();
   }
 
   async function confirmAnalysis() {
@@ -87,6 +107,68 @@ export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
       logAnalysis: { ...result.logAnalysis, needsReview: false },
       status: "parsed"
     });
+    void loadHistory();
+  }
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    try {
+      const response = await fetch("/api/uploads/history", { cache: "no-store" });
+      const payload = await response.json() as { history?: UploadHistoryItem[]; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "读取上传历史失败。");
+      setHistory(payload.history ?? []);
+    } catch (historyError) {
+      setError(historyError instanceof Error ? historyError.message : "读取上传历史失败。");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function loadReferenceOptions() {
+    try {
+      const [profilesResponse, curvesResponse] = await Promise.all([
+        fetch("/api/library/profiles", { cache: "no-store" }),
+        fetch("/api/curves", { cache: "no-store" })
+      ]);
+      const profilesPayload = await profilesResponse.json() as { profiles?: RoastProfileRecord[] };
+      const curvesPayload = await curvesResponse.json() as { curves?: CurveDocumentRecord[] };
+      const publicOptions = (profilesPayload.profiles ?? []).map((profile) => ({
+        label: `${profile.display_name}${profile.source_scope === "user" ? " · 我的上传" : " · 公开库"}`,
+        value: `public_profile:${profile.id}`
+      }));
+      const userOptions = (curvesPayload.curves ?? []).map((curve) => ({
+        label: `${curve.title} · 我的编辑曲线`,
+        value: `user_curve:${curve.id}`
+      }));
+      setReferenceOptions([
+        { label: "公开/上传曲线库", options: publicOptions },
+        { label: "我的曲线数据库", options: userOptions }
+      ].filter((group) => group.options.length));
+    } catch {
+      setReferenceOptions([]);
+    }
+  }
+
+  async function scoreUpload(uploadId: string | null) {
+    if (!uploadId || !selectedReference) return;
+    const [baselineKind, baselineId] = selectedReference.split(":");
+    setScoring(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/uploads/${uploadId}/score`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baselineKind, baselineId })
+      });
+      const payload = await response.json() as { score?: CurveScoreResult & { id?: string; createdAt?: string }; error?: string };
+      if (!response.ok || !payload.score) throw new Error(payload.error ?? "评分失败。");
+      setScoreResult(payload.score);
+      void loadHistory();
+    } catch (scoreError) {
+      setError(scoreError instanceof Error ? scoreError.message : "评分失败。");
+    } finally {
+      setScoring(false);
+    }
   }
 
   return (
@@ -113,7 +195,32 @@ export default function UploadAnalyzer({ locale = "zh" }: { locale?: Locale }) {
         </Card>
       ) : null}
 
-      {result ? <AnalysisResult result={result} onConfirm={confirmAnalysis} confirming={confirming} /> : null}
+      {result ? (
+        <>
+          <ScorePanel
+            uploadId={result.uploadId}
+            referenceOptions={referenceOptions}
+            selectedReference={selectedReference}
+            onReferenceChange={setSelectedReference}
+            onScore={scoreUpload}
+            scoring={scoring}
+            score={scoreResult}
+          />
+          <AnalysisResult result={result} onConfirm={confirmAnalysis} confirming={confirming} />
+        </>
+      ) : null}
+
+      <UploadHistory
+        loading={historyLoading}
+        history={history}
+        onRefresh={loadHistory}
+        onOpen={(item) => {
+          setResult(historyItemToResult(item));
+          setScoreResult(item.latestScore);
+          setError(null);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+      />
     </Space>
   );
 }
@@ -160,6 +267,103 @@ function AnalysisResult({ result, onConfirm, confirming }: {
         </Card>
       </Col>
     </Row>
+  );
+}
+
+function ScorePanel({
+  uploadId,
+  referenceOptions,
+  selectedReference,
+  onReferenceChange,
+  onScore,
+  scoring,
+  score
+}: {
+  uploadId: string | null;
+  referenceOptions: ReferenceOption[];
+  selectedReference: string | null;
+  onReferenceChange: (value: string | null) => void;
+  onScore: (uploadId: string | null) => void;
+  scoring: boolean;
+  score: (CurveScoreResult & { id?: string; createdAt?: string }) | null;
+}) {
+  return (
+    <Card title={<span className="card-title"><Star size={18} />曲线评分</span>}>
+      <Space orientation="vertical" size={12} className="full-width">
+        <span className="muted">先手动选择一条数据库曲线作为参考：可以选公开曲线库，也可以选你自己保存的曲线数据库。</span>
+        <Space size={10} wrap className="full-width">
+          <Select
+            className="score-reference-select"
+            allowClear
+            showSearch
+            placeholder="选择参考曲线"
+            value={selectedReference ?? undefined}
+            onChange={(value) => onReferenceChange(value ?? null)}
+            options={referenceOptions}
+            optionFilterProp="label"
+          />
+          <Button type="primary" icon={<Star size={16} />} disabled={!uploadId || !selectedReference} loading={scoring} onClick={() => onScore(uploadId)}>
+            对比评分
+          </Button>
+        </Space>
+        {!referenceOptions.length ? <Alert type="info" showIcon message="暂无可选参考曲线。请先在后台导入公开曲线，或在曲线编辑器保存一条个人曲线。" /> : null}
+        {score ? (
+          <Card size="small" className="score-result-card">
+            <Row gutter={[12, 12]} align="middle">
+              <Col xs={24} md={6}><Statistic title="评分" value={score.score} suffix="/ 100" /></Col>
+              <Col xs={24} md={6}><Statistic title="评级" value={ratingLabel(score.rating)} /></Col>
+              <Col xs={24} md={6}><Statistic title="平均温差" value={score.metrics.avgAbsDeltaC} suffix="C" /></Col>
+              <Col xs={24} md={6}><Statistic title="最大温差" value={score.metrics.maxAbsDeltaC} suffix="C" /></Col>
+            </Row>
+            <List size="small" dataSource={score.notes} renderItem={(note) => <List.Item>{note}</List.Item>} />
+          </Card>
+        ) : null}
+      </Space>
+    </Card>
+  );
+}
+
+function UploadHistory({
+  history,
+  loading,
+  onRefresh,
+  onOpen
+}: {
+  history: UploadHistoryItem[];
+  loading: boolean;
+  onRefresh: () => void;
+  onOpen: (item: UploadHistoryItem) => void;
+}) {
+  return (
+    <Card title={<span className="card-title"><History size={18} />上传历史</span>} extra={<Button size="small" onClick={onRefresh} loading={loading}>刷新</Button>}>
+      {!history.length && !loading ? <Empty description="还没有上传历史" /> : null}
+      <List
+        loading={loading}
+        dataSource={history}
+        renderItem={(item) => {
+          const analysis = item.log?.confirmed_analysis ?? item.log?.ai_analysis ?? null;
+          return (
+            <List.Item
+              actions={[
+                <Button key="open" size="small" onClick={() => onOpen(item)}>查看</Button>
+              ]}
+            >
+              <List.Item.Meta
+                title={
+                  <Space size={8} wrap>
+                    <span>{item.upload.file_name}</span>
+                    <Tag color="blue">{item.upload.file_kind}</Tag>
+                    <Tag color={item.upload.parse_status === "parsed" ? "green" : item.upload.parse_status === "needs_review" ? "orange" : "red"}>{item.upload.parse_status}</Tag>
+                    {item.latestScore ? <Tag color="gold">评分 {item.latestScore.score}</Tag> : null}
+                  </Space>
+                }
+                description={analysis?.summary ?? item.profile?.description ?? `上传于 ${formatDate(item.upload.created_at)}`}
+              />
+            </List.Item>
+          );
+        }}
+      />
+    </Card>
   );
 }
 
@@ -301,4 +505,56 @@ function downsample<T>(items: T[], maxItems: number) {
   if (items.length <= maxItems) return items;
   const stride = Math.ceil(items.length / maxItems);
   return items.filter((_, index) => index % stride === 0);
+}
+
+function historyItemToResult(item: UploadHistoryItem): UploadAnalysisResult {
+  const profile = item.profile ? roastProfileToKpro(item.profile) : undefined;
+  const analysis = item.log?.confirmed_analysis ?? item.log?.ai_analysis ?? undefined;
+  return {
+    uploadId: item.upload.id,
+    hash: item.upload.file_hash,
+    fileName: item.upload.file_name,
+    fileKind: item.upload.file_kind,
+    mimeType: item.upload.mime_type,
+    size: item.upload.size_bytes,
+    status: item.upload.parse_status,
+    duplicate: true,
+    storagePath: item.upload.storage_path,
+    persisted: true,
+    profile,
+    klog: item.log?.parsed_payload ?? undefined,
+    logAnalysis: analysis ?? undefined
+  };
+}
+
+function roastProfileToKpro(profile: RoastProfileRecord): KproProfile {
+  return {
+    fileName: profile.file_name,
+    shortName: profile.short_name,
+    designer: profile.designer,
+    description: profile.description,
+    schemaVersion: profile.raw_fields?.profile_schema_version ?? "1.4",
+    recommendedLevel: profile.recommended_level,
+    expectedFirstCrackTemp: profile.expected_first_crack_temp,
+    expectedColourChangeTemp: profile.expected_colour_change_temp,
+    roastLevels: profile.roast_levels,
+    roastCurvePoints: profile.roast_curve_points,
+    fanCurvePoints: profile.fan_curve_points,
+    rawFields: profile.raw_fields ?? {}
+  };
+}
+
+function ratingLabel(rating: CurveScoreResult["rating"]) {
+  return rating === "excellent" ? "优秀" : rating === "good" ? "良好" : rating === "review" ? "需复盘" : "偏差大";
+}
+
+function formatDate(value?: string) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
 }

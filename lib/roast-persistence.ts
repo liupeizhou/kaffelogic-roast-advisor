@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { scoreCurveAgainstReference, type CurveScoreResult } from "@/lib/curve-scoring";
 import { inferProfileTags } from "@/lib/kpro";
 import { getSupabaseAdmin, getUploadBucket } from "@/lib/supabase-admin";
-import type { CurvePoint, KproProfile, ParseStatus, UploadAnalysisResult, UploadFileKind, UploadRecord } from "@/lib/types";
+import type { CurvePoint, KlogParseResult, KproProfile, ParseStatus, RoastLogAnalysis, UploadAnalysisResult, UploadFileKind, UploadRecord } from "@/lib/types";
 
 export type RoastProfileRecord = {
   id: string;
@@ -13,6 +14,7 @@ export type RoastProfileRecord = {
   designer: string | null;
   description: string | null;
   source_type: string;
+  source_scope?: "user" | "official" | "community" | "system";
   target_brew: string;
   process_fit: string;
   altitude_range: { min?: number; max?: number } | null;
@@ -61,6 +63,24 @@ export type SharePageRecord = {
   quote_source_note: string | null;
   is_public: boolean;
   curve_documents: CurveDocumentRecord | null;
+};
+
+export type UploadHistoryItem = {
+  upload: UploadRecord & { created_at?: string; updated_at?: string };
+  profile: RoastProfileRecord | null;
+  log: {
+    ai_analysis: RoastLogAnalysis | null;
+    confirmed_analysis: RoastLogAnalysis | null;
+    parsed_payload: KlogParseResult | null;
+    confidence: number | null;
+    needs_review: boolean;
+    parse_status: ParseStatus;
+  } | null;
+  latestScore: (CurveScoreResult & {
+    id: string;
+    baselineKind: "public_profile" | "user_curve";
+    createdAt: string;
+  }) | null;
 };
 
 export async function requireSupabaseAdmin(): Promise<SupabaseClient> {
@@ -160,7 +180,12 @@ export async function upsertRoastProfile(uploadId: string, profile: NonNullable<
   return data as { id: string };
 }
 
-export async function upsertRoastLog(uploadId: string, analysis: NonNullable<UploadAnalysisResult["logAnalysis"]>, ownerId: string | null = null) {
+export async function upsertRoastLog(
+  uploadId: string,
+  analysis: NonNullable<UploadAnalysisResult["logAnalysis"]>,
+  ownerId: string | null = null,
+  parsedPayload: KlogParseResult | null = null
+) {
   const supabase = await requireSupabaseAdmin();
   const { error } = await supabase.from("roast_logs").upsert({
     upload_id: uploadId,
@@ -169,11 +194,78 @@ export async function upsertRoastLog(uploadId: string, analysis: NonNullable<Upl
     source_scope: ownerId ? "user" : "official",
     ai_analysis: analysis,
     confirmed_analysis: null,
+    parsed_payload: parsedPayload,
     confidence: analysis.confidence,
     needs_review: analysis.needsReview,
     parse_status: analysis.needsReview ? "needs_review" : "parsed"
   }, { onConflict: "upload_id" });
   if (error) throw error;
+}
+
+export async function listUploadHistory(ownerId: string, limit = 30): Promise<UploadHistoryItem[]> {
+  const supabase = await requireSupabaseAdmin();
+  const { data: uploads, error: uploadError } = await supabase
+    .from("uploads")
+    .select("id,owner_id,file_name,file_hash,file_kind,mime_type,storage_path,size_bytes,parse_status,visibility,source_scope,created_at,updated_at")
+    .eq("owner_id", ownerId)
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+  if (uploadError) throw uploadError;
+  const uploadRows = (uploads ?? []) as Array<UploadHistoryItem["upload"]>;
+  const uploadIds = uploadRows.map((upload) => upload.id);
+  if (!uploadIds.length) return [];
+
+  const [profilesResult, logsResult, scoresResult] = await Promise.all([
+    supabase.from("roast_profiles").select("*").in("upload_id", uploadIds),
+    supabase.from("roast_logs").select("upload_id,ai_analysis,confirmed_analysis,parsed_payload,confidence,needs_review,parse_status").in("upload_id", uploadIds),
+    supabase
+      .from("roast_profile_scores")
+      .select("id,upload_id,baseline_kind,score,rating,metrics,notes,created_at")
+      .in("upload_id", uploadIds)
+      .order("created_at", { ascending: false })
+  ]);
+  if (profilesResult.error) throw profilesResult.error;
+  if (logsResult.error) throw logsResult.error;
+  if (scoresResult.error) throw scoresResult.error;
+
+  const profilesByUpload = new Map<string, RoastProfileRecord>();
+  for (const profile of profilesResult.data ?? []) {
+    profilesByUpload.set(String(profile.upload_id), profile as unknown as RoastProfileRecord);
+  }
+
+  const logsByUpload = new Map<string, UploadHistoryItem["log"]>();
+  for (const log of logsResult.data ?? []) {
+    logsByUpload.set(String(log.upload_id), {
+      ai_analysis: log.ai_analysis as RoastLogAnalysis | null,
+      confirmed_analysis: log.confirmed_analysis as RoastLogAnalysis | null,
+      parsed_payload: log.parsed_payload as KlogParseResult | null,
+      confidence: typeof log.confidence === "number" ? log.confidence : null,
+      needs_review: Boolean(log.needs_review),
+      parse_status: log.parse_status as ParseStatus
+    });
+  }
+
+  const latestScoreByUpload = new Map<string, UploadHistoryItem["latestScore"]>();
+  for (const score of scoresResult.data ?? []) {
+    const uploadId = String(score.upload_id);
+    if (latestScoreByUpload.has(uploadId)) continue;
+    latestScoreByUpload.set(uploadId, {
+      id: String(score.id),
+      baselineKind: score.baseline_kind as "public_profile" | "user_curve",
+      score: Number(score.score),
+      rating: score.rating as CurveScoreResult["rating"],
+      metrics: score.metrics as CurveScoreResult["metrics"],
+      notes: Array.isArray(score.notes) ? score.notes as string[] : [],
+      createdAt: String(score.created_at)
+    });
+  }
+
+  return uploadRows.map((upload) => ({
+    upload,
+    profile: profilesByUpload.get(upload.id) ?? null,
+    log: logsByUpload.get(upload.id) ?? null,
+    latestScore: latestScoreByUpload.get(upload.id) ?? null
+  }));
 }
 
 export async function listRoastProfiles(limit = 120, ownerId?: string | null): Promise<RoastProfileRecord[]> {
@@ -190,6 +282,7 @@ export async function listRoastProfiles(limit = 120, ownerId?: string | null): P
       "designer",
       "description",
       "source_type",
+      "source_scope",
       "target_brew",
       "process_fit",
       "altitude_range",
@@ -232,6 +325,104 @@ export async function getCurveDocument(id: string, ownerId: string): Promise<Cur
     .maybeSingle();
   if (error) throw error;
   return data as unknown as CurveDocumentRecord | null;
+}
+
+export async function scoreUploadCurve(input: {
+  ownerId: string;
+  uploadId: string;
+  baselineKind: "public_profile" | "user_curve";
+  baselineId: string;
+}) {
+  const supabase = await requireSupabaseAdmin();
+  const uploadedPoints = await getUploadedTemperaturePoints(supabase, input.ownerId, input.uploadId);
+  const baselinePoints = await getBaselineTemperaturePoints(supabase, input.ownerId, input.baselineKind, input.baselineId);
+  const result = scoreCurveAgainstReference(uploadedPoints, baselinePoints);
+
+  const { data, error } = await supabase.from("roast_profile_scores").insert({
+    owner_id: input.ownerId,
+    upload_id: input.uploadId,
+    baseline_kind: input.baselineKind,
+    baseline_profile_id: input.baselineKind === "public_profile" ? input.baselineId : null,
+    baseline_curve_document_id: input.baselineKind === "user_curve" ? input.baselineId : null,
+    score: result.score,
+    rating: result.rating,
+    metrics: result.metrics,
+    notes: result.notes
+  }).select("id,created_at").single();
+  if (error) throw error;
+  return { ...result, id: String(data.id), createdAt: String(data.created_at), baselineKind: input.baselineKind };
+}
+
+async function getUploadedTemperaturePoints(supabase: SupabaseClient, ownerId: string, uploadId: string): Promise<CurvePoint[]> {
+  const { data: upload, error: uploadError } = await supabase
+    .from("uploads")
+    .select("id,file_kind")
+    .eq("id", uploadId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  if (uploadError) throw uploadError;
+  if (!upload) throw new Error("上传记录不存在。");
+
+  const { data: profile, error: profileError } = await supabase
+    .from("roast_profiles")
+    .select("roast_curve_points")
+    .eq("upload_id", uploadId)
+    .maybeSingle();
+  if (profileError) throw profileError;
+  if (Array.isArray(profile?.roast_curve_points) && profile.roast_curve_points.length >= 2) {
+    return profile.roast_curve_points as CurvePoint[];
+  }
+
+  const { data: log, error: logError } = await supabase
+    .from("roast_logs")
+    .select("parsed_payload")
+    .eq("upload_id", uploadId)
+    .maybeSingle();
+  if (logError) throw logError;
+  const parsed = log?.parsed_payload as KlogParseResult | null | undefined;
+  const actualMean = parsed?.samples
+    ?.map((sample) => ({ timeSeconds: sample.timeSeconds, value: sample.meanTempC ?? sample.tempC ?? sample.spotTempC ?? NaN }))
+    .filter((point) => Number.isFinite(point.value));
+  if (actualMean && actualMean.length >= 2) return downsamplePoints(actualMean, 180);
+
+  const targetProfile = parsed?.targetProfile?.roastCurvePoints;
+  if (Array.isArray(targetProfile) && targetProfile.length >= 2) return targetProfile;
+  throw new Error("这条上传记录没有可评分的温度曲线。请上传 .kpro 或 .klog。");
+}
+
+async function getBaselineTemperaturePoints(
+  supabase: SupabaseClient,
+  ownerId: string,
+  baselineKind: "public_profile" | "user_curve",
+  baselineId: string
+): Promise<CurvePoint[]> {
+  if (baselineKind === "public_profile") {
+    const { data, error } = await supabase
+      .from("roast_profiles")
+      .select("roast_curve_points")
+      .eq("id", baselineId)
+      .in("visibility", ["public", "unlisted"])
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("公开参考曲线不存在。");
+    return data.roast_curve_points as CurvePoint[];
+  }
+
+  const { data, error } = await supabase
+    .from("curve_documents")
+    .select("roast_curve_points")
+    .eq("id", baselineId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("个人参考曲线不存在。");
+  return data.roast_curve_points as CurvePoint[];
+}
+
+function downsamplePoints(points: CurvePoint[], maxItems: number) {
+  if (points.length <= maxItems) return points;
+  const stride = Math.ceil(points.length / maxItems);
+  return points.filter((_, index) => index % stride === 0);
 }
 
 export async function saveCurveDocument(input: {

@@ -113,7 +113,7 @@ export async function POST(request: Request) {
       await upsertRoastProfile(uploadId, profile, user.id);
     }
     if (uploadId && logAnalysis) {
-      await upsertRoastLog(uploadId, logAnalysis, user.id);
+      await upsertRoastLog(uploadId, logAnalysis, user.id, klog ?? null);
     }
     persisted = Boolean(uploadId);
 

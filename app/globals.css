@@ -435,6 +435,15 @@ h3 {
   background: var(--surface);
 }
 
+.score-reference-select {
+  min-width: min(100%, 420px);
+  flex: 1;
+}
+
+.score-result-card {
+  background: #fbfcf9;
+}
+
 .file-row {
   display: flex;
   flex-wrap: wrap;

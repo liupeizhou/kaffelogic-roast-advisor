@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Tabs, Upload } from "antd";
-import { Download, FileUp, Plus, Save, Share2, Trash2 } from "lucide-react";
+import { Alert, Button, Card, Col, Divider, Input, InputNumber, Row, Space, Tabs, Upload } from "antd";
+import { Download, FileUp, Plus, Save, Trash2 } from "lucide-react";
 import AnimatedRoastCurve from "@/components/animated-roast-curve";
 import OfficialProfileGuide from "@/components/official-profile-guide";
 import { getDictionary, withLocale, type Locale } from "@/lib/i18n";
-import { parseKpro } from "@/lib/kpro";
+import { parseKpro, serializeKpro } from "@/lib/kpro";
 import type { CurvePoint, KproProfile } from "@/lib/types";
 
 const DEFAULT_PROFILE: KproProfile = {
@@ -60,10 +59,8 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
   const t = getDictionary(locale);
   const [profile, setProfile] = useState<KproProfile>(DEFAULT_PROFILE);
   const [documentId, setDocumentId] = useState<string | null>(curveId ?? null);
-  const [template, setTemplate] = useState<"barista" | "baroque" | "cyberpunk">("barista");
   const [rawText, setRawText] = useState(JSON.stringify(DEFAULT_PROFILE.rawFields, null, 2));
   const [saving, setSaving] = useState(false);
-  const [sharing, setSharing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,6 +108,7 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
     setError(null);
     setMessage(null);
     try {
+      if (!profile.shortName?.trim()) throw new Error(locale === "zh" ? "曲线名字必填。" : "Profile name is required.");
       const rawFields = JSON.parse(rawText || "{}") as Record<string, string>;
       const response = await fetch(documentId ? `/api/curves/${documentId}` : "/api/curves", {
         method: documentId ? "PUT" : "POST",
@@ -129,26 +127,23 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
     }
   }
 
-  async function createShare() {
-    if (!documentId) {
-      await save();
-      return;
-    }
-    setSharing(true);
+  function downloadCurrent() {
     setError(null);
     try {
-      const response = await fetch("/api/shares", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ curveDocumentId: documentId, template })
-      });
-      const payload = await response.json() as { slug?: string; error?: string };
-      if (!response.ok || !payload.slug) throw new Error(payload.error ?? "Share failed.");
-      router.push(withLocale(locale, `/share/${payload.slug}`));
-    } catch (shareError) {
-      setError(shareError instanceof Error ? shareError.message : "Share failed.");
-    } finally {
-      setSharing(false);
+      if (!profile.shortName?.trim()) throw new Error(locale === "zh" ? "曲线名字必填。" : "Profile name is required.");
+      const rawFields = JSON.parse(rawText || "{}") as Record<string, string>;
+      const text = serializeKpro({ ...profile, rawFields });
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${sanitizeFileName(profile.shortName || profile.fileName)}.kpro`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : "Download failed.");
     }
   }
 
@@ -162,17 +157,7 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
             <Button icon={<FileUp size={16} />}>{t.editor.importKpro}</Button>
           </Upload>
           <Button type="primary" icon={<Save size={16} />} onClick={save} loading={saving}>{t.actions.save}</Button>
-          {documentId ? (
-            <Link href={`/api/curves/${documentId}/download`}>
-              <Button icon={<Download size={16} />}>{t.actions.download}</Button>
-            </Link>
-          ) : null}
-          <Select value={template} onChange={setTemplate} options={[
-            { value: "barista", label: t.share.barista },
-            { value: "baroque", label: t.share.baroque },
-            { value: "cyberpunk", label: t.share.cyberpunk }
-          ]} />
-          <Button icon={<Share2 size={16} />} onClick={createShare} loading={sharing}>{t.actions.share}</Button>
+          <Button icon={<Download size={16} />} onClick={downloadCurrent}>{t.actions.download}</Button>
         </Space>
       </Card>
 
@@ -180,10 +165,10 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
         <Col xs={24} xl={14}>
           <AnimatedRoastCurve profile={animatedProfile} />
           <Card className="editor-chart-card" title={t.editor.tempCurve}>
-            <EditableCurve points={profile.roastCurvePoints} minValue={20} maxValue={240} color="#f26735" onChange={(points) => setProfile({ ...profile, roastCurvePoints: points })} />
+            <EditableCurve points={profile.roastCurvePoints} minValue={20} maxValue={240} color="#f26735" yUnit="C" onChange={(points) => setProfile({ ...profile, roastCurvePoints: points })} />
           </Card>
           <Card className="editor-chart-card" title={t.editor.fanCurve}>
-            <EditableCurve points={profile.fanCurvePoints} minValue={9000} maxValue={17000} color="#2563eb" onChange={(points) => setProfile({ ...profile, fanCurvePoints: points })} />
+            <EditableCurve points={profile.fanCurvePoints} minValue={9000} maxValue={17000} color="#2563eb" yUnit="rpm" onChange={(points) => setProfile({ ...profile, fanCurvePoints: points })} />
           </Card>
         </Col>
         <Col xs={24} xl={10}>
@@ -204,7 +189,10 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
               {
                 key: "metadata",
                 label: t.editor.metadata,
-                children: <MetadataEditor profile={profile} onChange={setProfile} />
+                children: <MetadataEditor profile={profile} onChange={(nextProfile) => {
+                  setProfile(nextProfile);
+                  setRawText(JSON.stringify(nextProfile.rawFields, null, 2));
+                }} />
               },
               {
                 key: "points",
@@ -230,9 +218,13 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
 }
 
 function MetadataEditor({ profile, onChange }: { profile: KproProfile; onChange: (profile: KproProfile) => void }) {
+  function updateRawField(key: string, value: string) {
+    onChange({ ...profile, rawFields: { ...profile.rawFields, [key]: value } });
+  }
+
   return (
     <Space orientation="vertical" size={12} className="full-width">
-      <Input value={profile.shortName ?? ""} onChange={(event) => onChange({ ...profile, shortName: event.target.value })} placeholder="profile_short_name" />
+      <Input status={profile.shortName?.trim() ? undefined : "error"} value={profile.shortName ?? ""} onChange={(event) => onChange({ ...profile, shortName: event.target.value })} placeholder="曲线名字（必填） / profile_short_name" />
       <Input value={profile.designer ?? ""} onChange={(event) => onChange({ ...profile, designer: event.target.value })} placeholder="profile_designer" />
       <Input.TextArea rows={5} value={profile.description ?? ""} onChange={(event) => onChange({ ...profile, description: event.target.value })} placeholder="profile_description" />
       <Row gutter={[10, 10]}>
@@ -241,6 +233,21 @@ function MetadataEditor({ profile, onChange }: { profile: KproProfile; onChange:
         <Col span={8}><InputNumber className="full-width" value={profile.expectedColourChangeTemp} onChange={(value) => onChange({ ...profile, expectedColourChangeTemp: toNullableNumber(value) })} placeholder="Color" /></Col>
       </Row>
       <Input value={profile.roastLevels.join(",")} onChange={(event) => onChange({ ...profile, roastLevels: event.target.value.split(",").map(Number).filter(Number.isFinite) })} placeholder="roast_levels" />
+      <Divider plain>咖啡生豆信息</Divider>
+      <Input value={profile.rawFields.green_origin ?? ""} onChange={(event) => updateRawField("green_origin", event.target.value)} placeholder="产地 / Origin" />
+      <Input value={profile.rawFields.green_region ?? ""} onChange={(event) => updateRawField("green_region", event.target.value)} placeholder="产区 / Region" />
+      <Input value={profile.rawFields.green_farm ?? ""} onChange={(event) => updateRawField("green_farm", event.target.value)} placeholder="庄园 / Farm" />
+      <Input value={profile.rawFields.green_variety ?? ""} onChange={(event) => updateRawField("green_variety", event.target.value)} placeholder="豆种 / Variety" />
+      <Input value={profile.rawFields.green_lot ?? ""} onChange={(event) => updateRawField("green_lot", event.target.value)} placeholder="地块/批次 / Lot" />
+      <Input value={profile.rawFields.green_process ?? ""} onChange={(event) => updateRawField("green_process", event.target.value)} placeholder="处理法 / Process" />
+      <Input.TextArea rows={3} value={profile.rawFields.green_processing_detail ?? ""} onChange={(event) => updateRawField("green_processing_detail", event.target.value)} placeholder="处理工艺细节 / Processing detail" />
+      <Input.TextArea rows={3} value={profile.rawFields.green_flavor_notes ?? ""} onChange={(event) => updateRawField("green_flavor_notes", event.target.value)} placeholder="风味描述 / Flavor notes" />
+      <Row gutter={[10, 10]}>
+        <Col span={8}><Input value={profile.rawFields.green_altitude_m ?? ""} onChange={(event) => updateRawField("green_altitude_m", event.target.value)} placeholder="海拔 m" /></Col>
+        <Col span={8}><Input value={profile.rawFields.green_moisture_percent ?? ""} onChange={(event) => updateRawField("green_moisture_percent", event.target.value)} placeholder="含水率 %" /></Col>
+        <Col span={8}><Input value={profile.rawFields.green_density_g_l ?? ""} onChange={(event) => updateRawField("green_density_g_l", event.target.value)} placeholder="密度 g/L" /></Col>
+      </Row>
+      <Input value={profile.rawFields.target_roast_degree ?? ""} onChange={(event) => updateRawField("target_roast_degree", event.target.value)} placeholder="建议烘焙度 / Target roast degree" />
     </Space>
   );
 }
@@ -261,28 +268,47 @@ function PointEditor({ title, points, onChange }: { title: string; points: Curve
   );
 }
 
-function EditableCurve({ points, minValue, maxValue, color, onChange }: {
+function EditableCurve({ points, minValue, maxValue, color, yUnit, onChange }: {
   points: CurvePoint[];
   minValue: number;
   maxValue: number;
   color: string;
+  yUnit: string;
   onChange: (points: CurvePoint[]) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const [hover, setHover] = useState<{ x: number; y: number; timeSeconds: number; value: number } | null>(null);
+  const plot = { left: 56, right: 690, top: 20, bottom: 198 };
   if (!points.length) {
     return (
       <svg ref={svgRef} viewBox="0 0 720 240" width="100%" height="240" className="editable-curve">
         <rect x="0" y="0" width="720" height="240" rx="8" fill="#fbfcf9" />
-        {[0, 1, 2, 3].map((tick) => <line key={tick} x1="30" x2="690" y1={20 + tick * 60} y2={20 + tick * 60} stroke="#d8ddd7" />)}
+        <Axis plot={plot} minValue={minValue} maxValue={maxValue} maxTime={600} yUnit={yUnit} />
         <text x="360" y="124" textAnchor="middle" fill="#6d7b70" fontSize="15">No curve points</text>
       </svg>
     );
   }
   const maxTime = Math.max(...points.map((point) => point.timeSeconds), 1);
   const path = points.map((point, index) => {
-    const { x, y } = pointToXY(point, maxTime, minValue, maxValue);
+    const { x, y } = pointToXY(point, maxTime, minValue, maxValue, plot);
     return `${index === 0 ? "M" : "L"} ${x} ${y}`;
   }).join(" ");
+
+  function handleHover(event: React.PointerEvent<SVGSVGElement>) {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 720;
+    const y = ((event.clientY - rect.top) / rect.height) * 240;
+    if (x < plot.left || x > plot.right || y < plot.top || y > plot.bottom) {
+      setHover(null);
+      return;
+    }
+    const timeSeconds = ((x - plot.left) / (plot.right - plot.left)) * maxTime;
+    const value = interpolateCurve(points, timeSeconds);
+    const pointY = valueToY(value, minValue, maxValue, plot);
+    setHover({ x, y: pointY, timeSeconds, value });
+  }
 
   function drag(index: number, event: React.PointerEvent<SVGCircleElement>) {
     const svg = svgRef.current;
@@ -291,8 +317,8 @@ function EditableCurve({ points, minValue, maxValue, color, onChange }: {
     const rect = svg.getBoundingClientRect();
     const nextX = ((event.clientX - rect.left) / rect.width) * 720;
     const nextY = ((event.clientY - rect.top) / rect.height) * 240;
-    const timeSeconds = Math.max(0, Math.min(maxTime, ((nextX - 30) / 660) * maxTime));
-    const value = maxValue - ((nextY - 20) / 180) * (maxValue - minValue);
+    const timeSeconds = Math.max(0, Math.min(maxTime, ((nextX - plot.left) / (plot.right - plot.left)) * maxTime));
+    const value = maxValue - ((nextY - plot.top) / (plot.bottom - plot.top)) * (maxValue - minValue);
     onChange(updatePoint(points, index, {
       timeSeconds: Math.round(timeSeconds),
       value: Math.round(Math.max(minValue, Math.min(maxValue, value)) * 10) / 10
@@ -306,12 +332,30 @@ function EditableCurve({ points, minValue, maxValue, color, onChange }: {
   }
 
   return (
-    <svg ref={svgRef} viewBox="0 0 720 240" width="100%" height="240" className="editable-curve">
+    <svg
+      ref={svgRef}
+      viewBox="0 0 720 240"
+      width="100%"
+      height="240"
+      className="editable-curve"
+      onPointerMove={handleHover}
+      onPointerLeave={() => setHover(null)}
+    >
       <rect x="0" y="0" width="720" height="240" rx="8" fill="#fbfcf9" />
-      {[0, 1, 2, 3].map((tick) => <line key={tick} x1="30" x2="690" y1={20 + tick * 60} y2={20 + tick * 60} stroke="#d8ddd7" />)}
+      <Axis plot={plot} minValue={minValue} maxValue={maxValue} maxTime={maxTime} yUnit={yUnit} />
       <path d={path} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      {hover ? (
+        <g className="curve-crosshair">
+          <line x1={hover.x} x2={hover.x} y1={plot.top} y2={plot.bottom} stroke="#5f6f65" strokeDasharray="5 5" />
+          <circle cx={hover.x} cy={hover.y} r="4" fill={color} />
+          <rect x={Math.min(Math.max(hover.x - 58, plot.left), plot.right - 116)} y={plot.bottom + 10} width="116" height="22" rx="5" fill="#1c2520" />
+          <text x={Math.min(Math.max(hover.x, plot.left + 58), plot.right - 58)} y={plot.bottom + 26} textAnchor="middle" fill="#fff" fontSize="12">{formatSeconds(hover.timeSeconds)}</text>
+          <rect x="4" y={Math.min(Math.max(hover.y - 13, plot.top), plot.bottom - 26)} width="50" height="26" rx="5" fill="#1c2520" />
+          <text x="29" y={Math.min(Math.max(hover.y + 4, plot.top + 17), plot.bottom - 9)} textAnchor="middle" fill="#fff" fontSize="12">{Math.round(hover.value)}{yUnit}</text>
+        </g>
+      ) : null}
       {points.map((point, index) => {
-        const { x, y } = pointToXY(point, maxTime, minValue, maxValue);
+        const { x, y } = pointToXY(point, maxTime, minValue, maxValue, plot);
         return (
           <circle
             key={index}
@@ -331,11 +375,67 @@ function EditableCurve({ points, minValue, maxValue, color, onChange }: {
   );
 }
 
-function pointToXY(point: CurvePoint, maxTime: number, minValue: number, maxValue: number) {
+function Axis({ plot, minValue, maxValue, maxTime, yUnit }: {
+  plot: { left: number; right: number; top: number; bottom: number };
+  minValue: number;
+  maxValue: number;
+  maxTime: number;
+  yUnit: string;
+}) {
+  const yTicks = [0, 0.25, 0.5, 0.75, 1];
+  const xTicks = [0, 0.25, 0.5, 0.75, 1];
+  return (
+    <g>
+      <line x1={plot.left} x2={plot.left} y1={plot.top} y2={plot.bottom} stroke="#9aa59d" />
+      <line x1={plot.left} x2={plot.right} y1={plot.bottom} y2={plot.bottom} stroke="#9aa59d" />
+      {yTicks.map((tick) => {
+        const y = plot.bottom - tick * (plot.bottom - plot.top);
+        const value = minValue + tick * (maxValue - minValue);
+        return (
+          <g key={tick}>
+            <line x1={plot.left} x2={plot.right} y1={y} y2={y} stroke="#d8ddd7" />
+            <text x={plot.left - 8} y={y + 4} textAnchor="end" fill="#5f6f65" fontSize="11">{Math.round(value)}{yUnit}</text>
+          </g>
+        );
+      })}
+      {xTicks.map((tick) => {
+        const x = plot.left + tick * (plot.right - plot.left);
+        return (
+          <g key={tick}>
+            <line x1={x} x2={x} y1={plot.bottom} y2={plot.bottom + 5} stroke="#9aa59d" />
+            <text x={x} y={plot.bottom + 19} textAnchor="middle" fill="#5f6f65" fontSize="11">{formatSeconds(tick * maxTime)}</text>
+          </g>
+        );
+      })}
+      <text x={(plot.left + plot.right) / 2} y="235" textAnchor="middle" fill="#5f6f65" fontSize="12">Time (min:s)</text>
+      <text x="14" y={(plot.top + plot.bottom) / 2} textAnchor="middle" fill="#5f6f65" fontSize="12" transform={`rotate(-90 14 ${(plot.top + plot.bottom) / 2})`}>Value ({yUnit})</text>
+    </g>
+  );
+}
+
+function pointToXY(point: CurvePoint, maxTime: number, minValue: number, maxValue: number, plot: { left: number; right: number; top: number; bottom: number }) {
   return {
-    x: 30 + (point.timeSeconds / maxTime) * 660,
-    y: 200 - ((point.value - minValue) / Math.max(maxValue - minValue, 1)) * 180
+    x: plot.left + (point.timeSeconds / maxTime) * (plot.right - plot.left),
+    y: valueToY(point.value, minValue, maxValue, plot)
   };
+}
+
+function valueToY(value: number, minValue: number, maxValue: number, plot: { top: number; bottom: number }) {
+  return plot.bottom - ((value - minValue) / Math.max(maxValue - minValue, 1)) * (plot.bottom - plot.top);
+}
+
+function interpolateCurve(points: CurvePoint[], timeSeconds: number) {
+  const sorted = [...points].sort((a, b) => a.timeSeconds - b.timeSeconds);
+  if (timeSeconds <= sorted[0].timeSeconds) return sorted[0].value;
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previous = sorted[index - 1];
+    const next = sorted[index];
+    if (timeSeconds <= next.timeSeconds) {
+      const ratio = (timeSeconds - previous.timeSeconds) / Math.max(next.timeSeconds - previous.timeSeconds, 1);
+      return previous.value + (next.value - previous.value) * ratio;
+    }
+  }
+  return sorted.at(-1)?.value ?? 0;
 }
 
 function updatePoint(points: CurvePoint[], index: number, patch: Partial<CurvePoint>) {
@@ -346,6 +446,16 @@ function updatePoint(points: CurvePoint[], index: number, patch: Partial<CurvePo
 function toNullableNumber(value: string | number | null) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatSeconds(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${rest}`;
+}
+
+function sanitizeFileName(value: string) {
+  return value.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]+/g, "_").replace(/^_+|_+$/g, "") || "kaffelogic-profile";
 }
 
 function curveToProfile(curve: NonNullable<CurveResponse["curve"]>): KproProfile {

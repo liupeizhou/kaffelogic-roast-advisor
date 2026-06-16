@@ -62,6 +62,8 @@ v1 默认使用 service role key 通过服务端 API 写入数据库。不要把
 
 后台 `/zh/admin/settings` 可用于本地写入 `.env.local`。在 Vercel 上，运行时文件系统不适合作为持久配置源，请以 Vercel 环境变量为准。
 
+曲线数据库导入流程见 [docs/CURVE_IMPORT_SOP.md](docs/CURVE_IMPORT_SOP.md)。
+
 ## 验证
 
 ```bash

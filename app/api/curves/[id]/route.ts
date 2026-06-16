@@ -25,6 +25,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const body = await request.json();
     const profile = body.profile as KproProfile;
+    if (!profile.shortName?.trim()) throw new Error("曲线名字必填。");
     const curve = await saveCurveDocument({ ownerId: user.id, id, profile, visibility: body.visibility ?? "private" });
     return NextResponse.json({ curve });
   } catch (error) {
