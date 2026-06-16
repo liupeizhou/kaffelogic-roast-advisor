@@ -41,13 +41,13 @@ export const dictionaries = {
     },
     login: {
       title: "邮箱验证码登录",
-      lede: "输入邮箱获取 6 位验证码。登录后可以上传分析、编辑曲线、保存版本和生成分享页。",
+      lede: "输入邮箱获取一次性验证码。登录后可以上传分析、编辑曲线、保存版本和生成分享页。",
       email: "邮箱",
       code: "验证码",
       send: "发送验证码",
       verify: "验证并登录",
       sent: "验证码已发送，请查看邮箱。",
-      invalid: "请输入有效邮箱和 6 位验证码。"
+      invalid: "请输入有效邮箱和 6-10 位数字验证码。"
     },
     quota: {
       title: "账户与额度",
@@ -125,13 +125,13 @@ export const dictionaries = {
     },
     login: {
       title: "Email code sign-in",
-      lede: "Enter your email to receive a 6-digit code. Once signed in, you can analyze uploads, edit curves, save versions and create share pages.",
+      lede: "Enter your email to receive a one-time code. Once signed in, you can analyze uploads, edit curves, save versions and create share pages.",
       email: "Email",
       code: "Code",
       send: "Send code",
       verify: "Verify and sign in",
       sent: "Code sent. Check your email.",
-      invalid: "Enter a valid email and 6-digit code."
+      invalid: "Enter a valid email and a 6-10 digit code."
     },
     quota: {
       title: "Account & Quota",

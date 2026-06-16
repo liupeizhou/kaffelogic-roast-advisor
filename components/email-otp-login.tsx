@@ -7,6 +7,9 @@ import { Mail, ShieldCheck } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getDictionary, withLocale, type Locale } from "@/lib/i18n";
 
+const OTP_CODE_PATTERN = /^\d{6,10}$/;
+const OTP_MAX_LENGTH = 10;
+
 export default function EmailOtpLogin({ locale }: { locale: Locale }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -43,7 +46,7 @@ export default function EmailOtpLogin({ locale }: { locale: Locale }) {
 
   async function verifyCode() {
     setError(null);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || !/^\d{6}$/.test(code.trim())) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || !OTP_CODE_PATTERN.test(code.trim())) {
       setError(t.login.invalid);
       return;
     }
@@ -85,9 +88,9 @@ export default function EmailOtpLogin({ locale }: { locale: Locale }) {
               size="large"
               prefix={<ShieldCheck size={16} />}
               value={code}
-              maxLength={6}
+              maxLength={OTP_MAX_LENGTH}
               onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
-              placeholder="123456"
+              placeholder="12345678"
             />
           </Form.Item>
         ) : null}
