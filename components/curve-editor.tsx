@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Card, Col, Divider, Input, InputNumber, Row, Space, Tabs, Upload } from "antd";
-import { Download, FileUp, Plus, Save, Trash2 } from "lucide-react";
+import { Download, FileUp, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import AnimatedRoastCurve from "@/components/animated-roast-curve";
 import OfficialProfileGuide from "@/components/official-profile-guide";
 import { getDictionary, withLocale, type Locale } from "@/lib/i18n";
 import { parseKpro, serializeKpro } from "@/lib/kpro";
-import { defaultProfileGeneratorInput, generateKaffelogicProfile, getGeneratorSafetyNotes, type ProfileGeneratorInput, type RoastTarget } from "@/lib/profile-generator";
+import { defaultProfileGeneratorInput, generateKaffelogicProfile, getGeneratorSafetyNotes, type ProfileGeneratorInput } from "@/lib/profile-generator";
+import type { RoastTarget } from "@/lib/profile-generator";
+import { optimizeProfileCurve } from "@/lib/curve-optimizer";
 import type { CurvePoint, KproProfile } from "@/lib/types";
 
 const DEFAULT_PROFILE: KproProfile = {
@@ -62,6 +64,7 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
   const [documentId, setDocumentId] = useState<string | null>(curveId ?? null);
   const [rawText, setRawText] = useState(JSON.stringify(DEFAULT_PROFILE.rawFields, null, 2));
   const [saving, setSaving] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generatorInput, setGeneratorInput] = useState<ProfileGeneratorInput>(() => defaultProfileGeneratorInput(locale));
@@ -143,6 +146,38 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
     }
   }
 
+  async function optimizeRoR() {
+    if (!profile.anchors || profile.anchors.length < 4) {
+      setError(locale === "zh" ? "需要先生成或导入 Bezier 锚点曲线。" : "A Bezier anchor profile must be generated or imported first.");
+      return;
+    }
+    setOptimizing(true);
+    setError(null);
+    const events = {
+      ccTemp: profile.expectedColourChangeTemp ?? 170,
+      fcTemp: profile.expectedFirstCrackTemp ?? 204,
+      dropTemp: profile.roastCurvePoints.length ? profile.roastCurvePoints.at(-1)!.value : 216.8
+    };
+    try {
+      const result = optimizeProfileCurve(profile.anchors, events);
+      if (result.optimized && result.acceptance?.accepted) {
+        setProfile(prev => ({ ...prev, anchors: result.optimized! }));
+        setMessage(locale === "zh" ? "RoR 曲线已优化，锚点位置不变、温度曲线更平滑。" : "RoR curve optimized — anchor positions preserved, temperature curve smoothed.");
+      } else if (result.acceptance && !result.acceptance.accepted) {
+        const reasons = result.acceptance.reasons.join(", ");
+        setMessage(locale === "zh"
+          ? `优化未通过审核: ${reasons}。请手动调整锚点位置后重试。`
+          : `Optimization rejected: ${reasons}. Adjust anchor positions manually and retry.`);
+      } else {
+        setError(locale === "zh" ? "优化未产生有效结果，请检查曲线锚点数据。" : "Optimization produced no valid result.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Optimization failed.");
+    } finally {
+      setOptimizing(false);
+    }
+  }
+
   function downloadCurrent() {
     setError(null);
     try {
@@ -173,6 +208,7 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
             <Button icon={<FileUp size={16} />}>{t.editor.importKpro}</Button>
           </Upload>
           <Button type="primary" icon={<Save size={16} />} onClick={save} loading={saving}>{t.actions.save}</Button>
+          <Button icon={<Sparkles size={16} />} onClick={optimizeRoR} loading={optimizing}>{locale === "zh" ? "优化 RoR" : "Optimize RoR"}</Button>
           <Button icon={<Download size={16} />} onClick={downloadCurrent}>{t.actions.download}</Button>
         </Space>
       </Card>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, requireUserResponse } from "@/lib/auth";
 import { getQuotaSnapshot } from "@/lib/quota";
+import { checkFixedWindowRateLimit } from "@/lib/rate-limit";
 import { getRoastProfile, listRoastProfileReviews, upsertRoastProfileReview } from "@/lib/roast-persistence";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -23,6 +24,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { user, denied } = await requireUserResponse();
   if (denied) return denied;
   const { id } = await params;
+  const rateLimit = checkFixedWindowRateLimit({
+    key: `profile-review:${user.id}`,
+    limit: 12,
+    windowMs: 60_000
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json({
+      error: "评论提交过于频繁，请稍后再试。",
+      retryAfterSeconds: rateLimit.retryAfterSeconds
+    }, {
+      status: 429,
+      headers: { "Retry-After": String(rateLimit.retryAfterSeconds) }
+    });
+  }
+
   const supabase = await getSupabaseAdmin();
   if (!supabase) return NextResponse.json({ error: "Supabase 尚未配置。" }, { status: 503 });
 

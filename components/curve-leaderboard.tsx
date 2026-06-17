@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Alert, Button, Card, Col, Divider, Empty, Input, List, Rate, Row, Space, Statistic, Tag } from "antd";
+import { Alert, Button, Card, Col, Divider, Empty, Input, Rate, Row, Space, Statistic, Tag } from "antd";
 import { Download, MessageSquare, Trophy } from "lucide-react";
 import CurveRadarChart from "@/components/curve-radar-chart";
 import { buildCurveRadarMetrics } from "@/lib/curve-radar";
@@ -96,32 +96,37 @@ export default function CurveLeaderboard({ locale }: { locale: Locale }) {
         <Col xs={24} lg={14}>
           <Card title={<span className="card-title"><Trophy size={18} />{zh ? "曲线排行榜" : "Profile leaderboard"}</span>}>
             {!profiles.length && !loading ? <Empty description={zh ? "暂无曲线排行" : "No ranked profiles yet"} /> : null}
-            <List
-              loading={loading}
-              dataSource={profiles}
-              renderItem={(profile, index) => (
-                <List.Item
+            {loading ? <p className="muted">{zh ? "加载中..." : "Loading..."}</p> : null}
+            <div className="leaderboard-list" aria-busy={loading}>
+              {profiles.map((profile, index) => (
+                <div
+                  key={profile.id}
                   className={profile.id === selected?.id ? "leaderboard-item active" : "leaderboard-item"}
-                  actions={[
-                    <Link key="download" href={`/api/library/profiles/${profile.id}/download`}>
-                      <Button size="small" icon={<Download size={14} />}>{zh ? "下载" : "Download"}</Button>
-                    </Link>,
-                    <Button key="reviews" size="small" icon={<MessageSquare size={14} />} onClick={() => selectProfile(profile)}>{zh ? "点评" : "Reviews"}</Button>
-                  ]}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => void selectProfile(profile)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") void selectProfile(profile);
+                  }}
                 >
-                  <List.Item.Meta
-                    title={<Space wrap><strong>#{index + 1} {profile.display_name}</strong><Tag color="gold">{profile.leaderboard_score ?? 0}</Tag></Space>}
-                    description={`${profile.process_fit} · L${profile.recommended_level ?? "?"} · ${profile.designer ?? profile.file_name}`}
-                  />
+                  <div>
+                    <Space wrap><strong>#{index + 1} {profile.display_name}</strong><Tag color="gold">{profile.leaderboard_score ?? 0}</Tag></Space>
+                    <p className="muted">{profile.process_fit} · L{profile.recommended_level ?? "?"} · {profile.designer ?? profile.file_name}</p>
+                    <Space wrap>
+                      <Link href={`/api/library/profiles/${profile.id}/download`} onClick={(event) => event.stopPropagation()}>
+                        <Button size="small" icon={<Download size={14} />}>{zh ? "下载" : "Download"}</Button>
+                      </Link>
+                      <Button size="small" icon={<MessageSquare size={14} />} onClick={(event) => { event.stopPropagation(); void selectProfile(profile); }}>{zh ? "点评" : "Reviews"}</Button>
+                    </Space>
+                  </div>
                   <Space size={16} wrap>
                     <Statistic title={zh ? "下载" : "Downloads"} value={profile.download_count ?? 0} />
                     <Statistic title={zh ? "评分" : "Rating"} value={Number(profile.rating_average ?? 0)} precision={1} />
                     <Statistic title={zh ? "点评" : "Reviews"} value={profile.review_count ?? 0} />
                   </Space>
-                </List.Item>
-              )}
-            />
+                </div>
+              ))}
+            </div>
           </Card>
         </Col>
         <Col xs={24} lg={10}>
@@ -133,18 +138,16 @@ export default function CurveLeaderboard({ locale }: { locale: Locale }) {
                 <Rate value={rating} onChange={setRating} />
                 <Input.TextArea rows={4} value={body} onChange={(event) => setBody(event.target.value)} placeholder={zh ? "写下这条曲线的适用豆子、烘焙反馈或风险点" : "Bean fit, roast feedback or risk notes"} />
                 <Button type="primary" onClick={submitReview} loading={reviewing}>{zh ? "提交点评" : "Submit review"}</Button>
-                <List
-                  size="small"
-                  dataSource={reviews}
-                  renderItem={(review) => (
-                    <List.Item>
+                <div className="review-list">
+                  {reviews.map((review) => (
+                    <div key={review.id} className="review-list-item">
                       <Space orientation="vertical" size={4}>
                         <Rate disabled value={review.rating} />
                         <span>{review.body || (zh ? "未填写文字点评" : "No written note")}</span>
                       </Space>
-                    </List.Item>
-                  )}
-                />
+                    </div>
+                  ))}
+                </div>
               </Space>
             ) : null}
           </Card>

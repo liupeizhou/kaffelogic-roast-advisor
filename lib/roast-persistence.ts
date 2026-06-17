@@ -327,6 +327,7 @@ export async function listUploadHistory(ownerId: string, limit = 30): Promise<Up
       baselineKind: score.baseline_kind as "public_profile" | "user_curve",
       score: Number(score.score),
       rating: score.rating as CurveScoreResult["rating"],
+      phaseBreakdown: { dryingPct: 0, maillardPct: 0, developmentPct: 0, dtr: 0 },
       metrics: score.metrics as CurveScoreResult["metrics"],
       notes: Array.isArray(score.notes) ? score.notes as string[] : [],
       createdAt: String(score.created_at)

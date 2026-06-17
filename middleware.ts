@@ -4,6 +4,12 @@ import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware";
 import { isAdminEmail } from "@/lib/user-groups";
 
 const PROTECTED_PATHS = ["/upload", "/editor", "/account", "/admin"];
+const SECURITY_HEADERS: Array<[string, string]> = [
+  ["X-Frame-Options", "DENY"],
+  ["X-Content-Type-Options", "nosniff"],
+  ["Referrer-Policy", "strict-origin-when-cross-origin"],
+  ["Permissions-Policy", "camera=(), microphone=(), geolocation=()"]
+];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -13,9 +19,9 @@ export async function middleware(request: NextRequest) {
     if (pathname === "/") {
       const url = request.nextUrl.clone();
       url.pathname = `/${resolvePreferredLocale(request)}`;
-      return NextResponse.redirect(url);
+      return withSecurityHeaders(NextResponse.redirect(url));
     }
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
 
   const { supabase, response } = createSupabaseMiddlewareClient(request);
@@ -27,17 +33,22 @@ export async function middleware(request: NextRequest) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = `/${firstSegment}/login`;
     loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+    return withSecurityHeaders(NextResponse.redirect(loginUrl));
   }
 
   if (authenticated && isAdminPath(localizedPath) && !isAdminEmail(session.email)) {
     const deniedUrl = request.nextUrl.clone();
     deniedUrl.pathname = `/${firstSegment}/account`;
     deniedUrl.searchParams.set("admin", "forbidden");
-    return NextResponse.redirect(deniedUrl);
+    return withSecurityHeaders(NextResponse.redirect(deniedUrl));
   }
 
   response.cookies.set("kaffelogic-locale", firstSegment, { path: "/", sameSite: "lax" });
+  return withSecurityHeaders(response);
+}
+
+function withSecurityHeaders(response: NextResponse) {
+  for (const [key, value] of SECURITY_HEADERS) response.headers.set(key, value);
   return response;
 }
 
@@ -64,6 +75,7 @@ function resolvePreferredLocale(request: NextRequest): Locale {
 }
 
 export const config = {
+  runtime: "nodejs",
   matcher: [
     "/",
     "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"

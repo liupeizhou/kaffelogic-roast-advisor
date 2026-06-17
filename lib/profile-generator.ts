@@ -1,4 +1,5 @@
 import type { CurvePoint, KproProfile } from "@/lib/types";
+import { sampleBezierAnchors, round1, round3 } from "@/lib/curve-bezier";
 
 export type RoastTarget = {
   t: number;
@@ -29,22 +30,28 @@ const DEFAULT_ROAST_LEVELS = [214.9, 216.5, 218, 219.5, 222, 224, 227.1];
 
 export function generateKaffelogicProfile(input: ProfileGeneratorInput): KproProfile {
   validateGeneratorInput(input);
-  const roastCurvePoints = generateTemperatureCurve(input);
+
+  // Build 5-anchor Bezier curves for the temperature profile
+  const anchors = buildTemperatureAnchors(input);
+  const { tempPoints } = sampleBezierAnchors(anchors, input.drop.t <= 520 ? 15 : 20);
+
+  const roastCurvePoints = enforceMilestones(enforceMonotonic(tempPoints), input);
   const fanCurvePoints = generateFanCurve(input);
   const roastLevels = adjustedRoastLevels(input.drop.T);
   const recommendedLevel = dropTempToRecommendedLevel(input.drop.T, roastLevels);
-  const rorDecline = estimateRorDecline(roastCurvePoints, input.rorInterval.startSec, input.rorInterval.endSec);
+  const rorDecline = estimateRorDecline(roastCurvePoints, input.rorInterval);
   const adjustmentNodes = buildAdjustmentNodes(input, roastCurvePoints);
   const safetyNotes = getGeneratorSafetyNotes(input);
+  const dtr = ((input.drop.t - input.fc.t) / input.drop.t) * 100;
 
   return {
     fileName: input.fileName ?? `${sanitizeName(input.shortName)}.kpro`,
     shortName: input.shortName,
     designer: input.designer ?? "Kaffelogic Roast Advisor",
     description: input.description ?? [
-      "Generated from Start / CC / FC / Drop targets.",
+      "Generated from Start / CC / FC / Drop targets with Bezier smoothing.",
       `CC ${formatSeconds(input.cc.t)} ${input.cc.T.toFixed(1)}C; FC ${formatSeconds(input.fc.t)} ${input.fc.T.toFixed(1)}C; Drop ${formatSeconds(input.drop.t)} ${input.drop.T.toFixed(1)}C.`,
-      `RoR decline interval ${formatSeconds(input.rorInterval.startSec)}-${formatSeconds(input.rorInterval.endSec)}.`
+      `DTR ${dtr.toFixed(1)}%; RoR interval ${formatSeconds(input.rorInterval.startSec)}–${formatSeconds(input.rorInterval.endSec)}.`
     ].join("\n"),
     schemaVersion: "1.4",
     recommendedLevel,
@@ -53,9 +60,10 @@ export function generateKaffelogicProfile(input: ProfileGeneratorInput): KproPro
     roastLevels,
     roastCurvePoints,
     fanCurvePoints,
+    anchors,
     rawFields: {
       profile_schema_version: "1.4",
-      profile_generator: "kaffelogic-roast-advisor-target-generator",
+      profile_generator: "kaffelogic-roast-advisor-bezier-generator",
       generator_start_temp: String(round1(input.startTemp)),
       generator_cc: `${input.cc.t},${round1(input.cc.T)}`,
       generator_fc: `${input.fc.t},${round1(input.fc.T)}`,
@@ -63,7 +71,8 @@ export function generateKaffelogicProfile(input: ProfileGeneratorInput): KproPro
       generator_ror_interval: `${input.rorInterval.startSec},${input.rorInterval.endSec}`,
       generator_fan: `${input.fan.startRpm},${input.fan.descentRpm},${input.fan.descentOffsetSec}`,
       generator_ror_decline_c_per_min: String(round1(rorDecline)),
-      generator_adjustment_nodes: adjustmentNodes.map((node) => `${node.label}@${node.timeSeconds}s/${node.temperatureC}C`).join("; "),
+      generator_dtr: String(round1(dtr)),
+      generator_adjustment_nodes: adjustmentNodes.map((n) => `${n.label}@${n.timeSeconds}s/${n.temperatureC}C`).join("; "),
       generator_preheat_policy: "Nano 7 no preheat: add green coffee, fit chaff collector, then start roast.",
       generator_fan_preview_required: "true",
       generator_safety_notes: safetyNotes.join(" | ")
@@ -95,6 +104,7 @@ export function getGeneratorSafetyNotes(input: ProfileGeneratorInput, locale: "z
     "Generated curves are drafts: manually adjust CC, FC, Drop and development checkpoints before treating the profile as roast-ready.",
     "Fan preview is required: use the actual beans and target load, then confirm even movement around the chamber with slower but visible movement in the center."
   ];
+
   const fanDrop = input.fan.startRpm - input.fan.descentRpm;
   const descentTime = input.fc.t - input.fan.descentOffsetSec;
 
@@ -116,8 +126,11 @@ export function getGeneratorSafetyNotes(input: ProfileGeneratorInput, locale: "z
       : "Fan descent timing is detached from the roast process: keep the descent around FC to avoid drying-stage exhaust issues or late-stage tracking problems."
     );
   }
+
   return notes;
 }
+
+// ---- Private helpers ----
 
 function validateGeneratorInput(input: ProfileGeneratorInput) {
   if (!input.shortName.trim()) throw new Error("Profile name is required.");
@@ -139,114 +152,49 @@ function validateGeneratorInput(input: ProfileGeneratorInput) {
   }
 }
 
-function generateTemperatureCurve(input: ProfileGeneratorInput): CurvePoint[] {
-  const nodes = [
-    { t: 0, T: input.startTemp },
-    input.cc,
-    input.fc,
-    input.drop
-  ];
-  const segmentSlopes = nodes.slice(0, -1).map((node, index) => {
-    const next = nodes[index + 1];
-    return (next.T - node.T) / Math.max(next.t - node.t, 1);
-  });
-  const tangents = [
-    segmentSlopes[0] * 1.34,
-    Math.min(segmentSlopes[0], segmentSlopes[1]) * 0.82,
-    Math.min(segmentSlopes[1], segmentSlopes[2]) * 0.62,
-    segmentSlopes[2] * 0.34
-  ];
-  const sampleTimes = new Set<number>();
-  const step = input.drop.t <= 520 ? 15 : 20;
+function buildTemperatureAnchors(input: ProfileGeneratorInput) {
+  const ccRamp = Math.round(input.cc.t * 0.35);
+  const maillardMid = Math.round((input.cc.t + input.fc.t) / 2);
 
-  for (let time = 0; time <= input.drop.t; time += step) {
-    sampleTimes.add(time);
-  }
-  for (const time of explicitAdjustmentTimes(input)) sampleTimes.add(time);
-
-  const points = [...sampleTimes]
-    .filter((time) => time >= 0 && time <= input.drop.t)
-    .sort((a, b) => a - b)
-    .map((time) => ({ timeSeconds: time, value: round1(sampleHermite(nodes, tangents, time)) }));
-
-  return enforceMilestones(enforceMonotonic(points), input);
-}
-
-function explicitAdjustmentTimes(input: ProfileGeneratorInput): number[] {
   return [
-    0,
-    Math.max(30, Math.round(input.cc.t * 0.5)),
-    Math.max(0, input.cc.t - 25),
-    input.cc.t,
-    Math.round((input.cc.t + input.fc.t) / 2),
-    Math.max(input.cc.t + 1, input.fc.t - 35),
-    input.fc.t,
-    Math.min(input.drop.t - 1, input.fc.t + Math.round((input.drop.t - input.fc.t) * 0.45)),
-    Math.max(input.fc.t + 1, input.drop.t - 30),
-    input.drop.t
-  ].map((time) => Math.round(time));
-}
-
-function enforceMilestones(points: CurvePoint[], input: ProfileGeneratorInput) {
-  const milestoneValues = new Map<number, number>([
-    [0, round1(input.startTemp)],
-    [input.cc.t, round1(input.cc.T)],
-    [input.fc.t, round1(input.fc.T)],
-    [input.drop.t, round1(input.drop.T)]
-  ]);
-
-  const merged = new Map(points.map((point) => [point.timeSeconds, point.value]));
-  for (const [time, value] of milestoneValues) merged.set(time, value);
-  return [...merged.entries()]
-    .map(([timeSeconds, value]) => ({ timeSeconds, value }))
-    .sort((a, b) => a.timeSeconds - b.timeSeconds);
-}
-
-function buildAdjustmentNodes(input: ProfileGeneratorInput, points: CurvePoint[]) {
-  const nodeTimes = [
-    { label: "Start", timeSeconds: 0 },
-    { label: "Drying adjust", timeSeconds: Math.max(30, Math.round(input.cc.t * 0.5)) },
-    { label: "CC", timeSeconds: input.cc.t },
-    { label: "Maillard adjust", timeSeconds: Math.round((input.cc.t + input.fc.t) / 2) },
-    { label: "FC", timeSeconds: input.fc.t },
-    { label: "Development adjust", timeSeconds: Math.min(input.drop.t - 1, input.fc.t + Math.round((input.drop.t - input.fc.t) * 0.45)) },
-    { label: "Drop", timeSeconds: input.drop.t }
+    // Anchor 0: Start
+    {
+      position: { timeSeconds: 0, value: input.startTemp },
+      leftCtrl: { timeSeconds: 0, value: 0 },
+      rightCtrl: { timeSeconds: Math.round(ccRamp * 0.3), value: round1(input.startTemp + 18) }
+    },
+    // Anchor 1: Mid-drying
+    {
+      position: { timeSeconds: Math.round(input.cc.t * 0.5), value: round1(input.startTemp + (input.cc.T - input.startTemp) * 0.54) },
+      leftCtrl: { timeSeconds: Math.round(input.cc.t * 0.35), value: round1(input.startTemp + (input.cc.T - input.startTemp) * 0.42) },
+      rightCtrl: { timeSeconds: Math.round(input.cc.t * 0.72), value: round1(input.startTemp + (input.cc.T - input.startTemp) * 0.68) }
+    },
+    // Anchor 2: CC point
+    {
+      position: { timeSeconds: input.cc.t, value: input.cc.T },
+      leftCtrl: { timeSeconds: Math.round(input.cc.t - (input.cc.t - input.cc.t * 0.5) * 0.3), value: round1(input.cc.T - 4) },
+      rightCtrl: { timeSeconds: Math.round(input.cc.t + (maillardMid - input.cc.t) * 0.3), value: round1(input.cc.T + 3) }
+    },
+    // Anchor 3: FC point
+    {
+      position: { timeSeconds: input.fc.t, value: input.fc.T },
+      leftCtrl: { timeSeconds: Math.round(input.fc.t - (input.fc.t - maillardMid) * 0.25), value: round1(input.fc.T - 3) },
+      rightCtrl: { timeSeconds: Math.round(input.fc.t + (input.drop.t - input.fc.t) * 0.25), value: round1(input.fc.T + 2) }
+    },
+    // Anchor 4: Drop
+    {
+      position: { timeSeconds: input.drop.t, value: input.drop.T },
+      leftCtrl: { timeSeconds: Math.round(input.fc.t + (input.drop.t - input.fc.t) * 0.72), value: round1(input.drop.T - 1.5) },
+      rightCtrl: { timeSeconds: input.drop.t, value: 0 }
+    }
   ];
-  return nodeTimes.map((node) => ({
-    ...node,
-    temperatureC: round1(interpolate(points, node.timeSeconds))
-  }));
-}
-
-function sampleHermite(nodes: Array<{ t: number; T: number }>, tangents: number[], time: number) {
-  const segmentIndex = Math.min(
-    Math.max(nodes.findIndex((node, index) => index < nodes.length - 1 && time <= nodes[index + 1].t), 0),
-    nodes.length - 2
-  );
-  const start = nodes[segmentIndex];
-  const end = nodes[segmentIndex + 1];
-  const duration = Math.max(end.t - start.t, 1);
-  const ratio = Math.max(0, Math.min(1, (time - start.t) / duration));
-  const h00 = 2 * ratio ** 3 - 3 * ratio ** 2 + 1;
-  const h10 = ratio ** 3 - 2 * ratio ** 2 + ratio;
-  const h01 = -2 * ratio ** 3 + 3 * ratio ** 2;
-  const h11 = ratio ** 3 - ratio ** 2;
-  return h00 * start.T + h10 * duration * tangents[segmentIndex] + h01 * end.T + h11 * duration * tangents[segmentIndex + 1];
-}
-
-function enforceMonotonic(points: CurvePoint[]) {
-  let last = -Infinity;
-  return points.map((point) => {
-    const value = Math.max(point.value, last);
-    last = value;
-    return { ...point, value: round1(value) };
-  });
 }
 
 function generateFanCurve(input: ProfileGeneratorInput): CurvePoint[] {
   const descentTime = Math.max(0, input.fc.t - input.fan.descentOffsetSec);
   const settleTime = Math.max(0, Math.round(descentTime * 0.57));
   const releaseTime = Math.max(descentTime + 1, input.drop.t + 170);
+
   return [
     { timeSeconds: 0, value: input.fan.startRpm },
     { timeSeconds: settleTime, value: input.fan.startRpm },
@@ -255,64 +203,87 @@ function generateFanCurve(input: ProfileGeneratorInput): CurvePoint[] {
   ];
 }
 
-function adjustedRoastLevels(dropTemp: number) {
+function enforceMonotonic(points: CurvePoint[]): CurvePoint[] {
+  let last = -Infinity;
+  return points.map((p) => {
+    const value = Math.max(p.value, last);
+    last = value;
+    return { ...p, value: round1(value) };
+  });
+}
+
+function enforceMilestones(points: CurvePoint[], input: ProfileGeneratorInput): CurvePoint[] {
+  const milestones = new Map<number, number>([
+    [0, round1(input.startTemp)],
+    [input.cc.t, round1(input.cc.T)],
+    [input.fc.t, round1(input.fc.T)],
+    [input.drop.t, round1(input.drop.T)]
+  ]);
+  const merged = new Map(points.map((p) => [p.timeSeconds, p.value]));
+  for (const [t, v] of milestones) merged.set(t, v);
+  return [...merged.entries()]
+    .map(([timeSeconds, value]) => ({ timeSeconds, value }))
+    .sort((a, b) => a.timeSeconds - b.timeSeconds);
+}
+
+function buildAdjustmentNodes(input: ProfileGeneratorInput, points: CurvePoint[]) {
+  const nodes = [
+    { label: "Start", t: 0 },
+    { label: "Drying adjust", t: Math.max(30, Math.round(input.cc.t * 0.5)) },
+    { label: "CC", t: input.cc.t },
+    { label: "Maillard adjust", t: Math.round((input.cc.t + input.fc.t) / 2) },
+    { label: "FC", t: input.fc.t },
+    { label: "Develop adjust", t: Math.min(input.drop.t - 1, input.fc.t + Math.round((input.drop.t - input.fc.t) * 0.45)) },
+    { label: "Drop", t: input.drop.t }
+  ];
+  return nodes.map((n) => ({ label: n.label, timeSeconds: n.t, temperatureC: round1(lookupTemp(points, n.t)) }));
+}
+
+function lookupTemp(points: CurvePoint[], timeSeconds: number): number {
+  for (let i = 1; i < points.length; i += 1) {
+    if (points[i].timeSeconds >= timeSeconds) {
+      const d = points[i].timeSeconds - points[i - 1].timeSeconds;
+      const r = d > 0 ? (timeSeconds - points[i - 1].timeSeconds) / d : 0;
+      return points[i - 1].value + (points[i].value - points[i - 1].value) * r;
+    }
+  }
+  return points.at(-1)?.value ?? 0;
+}
+
+function adjustedRoastLevels(dropTemp: number): number[] {
   const levels = [...DEFAULT_ROAST_LEVELS];
   if (dropTemp <= levels[0]) levels[0] = round1(dropTemp - 2);
   if (dropTemp >= levels[levels.length - 1]) levels[levels.length - 1] = round1(dropTemp + 2);
   return levels;
 }
 
-function dropTempToRecommendedLevel(dropTemp: number, levels: number[]) {
+function dropTempToRecommendedLevel(dropTemp: number, levels: number[]): number {
   if (dropTemp <= levels[0]) return 0;
-  for (let index = 0; index < levels.length - 1; index += 1) {
-    const current = levels[index];
-    const next = levels[index + 1];
-    if (dropTemp <= next) {
-      return round3(index + (dropTemp - current) / Math.max(next - current, 0.1));
+  for (let i = 0; i < levels.length - 1; i += 1) {
+    if (dropTemp <= levels[i + 1]) {
+      return round3(i + (dropTemp - levels[i]) / Math.max(levels[i + 1] - levels[i], 0.1));
     }
   }
   return levels.length - 1;
 }
 
-function estimateRorDecline(points: CurvePoint[], startSec: number, endSec: number) {
-  const start = estimateRor(points, startSec);
-  const end = estimateRor(points, endSec);
+function estimateRorDecline(points: CurvePoint[], interval: { startSec: number; endSec: number }): number {
+  const start = estimateRorAt(points, interval.startSec);
+  const end = estimateRorAt(points, interval.endSec);
   return start - end;
 }
 
-function estimateRor(points: CurvePoint[], timeSeconds: number) {
-  const before = interpolate(points, Math.max(0, timeSeconds - 15));
-  const after = interpolate(points, Math.min(points.at(-1)?.timeSeconds ?? timeSeconds, timeSeconds + 15));
+function estimateRorAt(points: CurvePoint[], timeSeconds: number): number {
+  const before = lookupTemp(points, Math.max(0, timeSeconds - 15));
+  const after = lookupTemp(points, Math.min(points.at(-1)?.timeSeconds ?? timeSeconds, timeSeconds + 15));
   return ((after - before) / 30) * 60;
 }
 
-function interpolate(points: CurvePoint[], timeSeconds: number) {
-  if (!points.length) return 0;
-  if (timeSeconds <= points[0].timeSeconds) return points[0].value;
-  for (let index = 1; index < points.length; index += 1) {
-    const previous = points[index - 1];
-    const next = points[index];
-    if (timeSeconds <= next.timeSeconds) {
-      const ratio = (timeSeconds - previous.timeSeconds) / Math.max(next.timeSeconds - previous.timeSeconds, 1);
-      return previous.value + (next.value - previous.value) * ratio;
-    }
-  }
-  return points.at(-1)?.value ?? 0;
+function formatSeconds(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  return `${m}:${Math.round(seconds % 60).toString().padStart(2, "0")}`;
 }
 
-function round1(value: number) {
-  return Math.round(value * 10) / 10;
-}
-
-function round3(value: number) {
-  return Math.round(value * 1000) / 1000;
-}
-
-function formatSeconds(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${Math.round(seconds % 60).toString().padStart(2, "0")}`;
-}
-
-function sanitizeName(value: string) {
-  return value.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]+/g, "_").replace(/^_+|_+$/g, "") || "generated-profile";
+function sanitizeName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9一-龥_-]+/g, "_").replace(/^_+|_+$/g, "") || "generated-profile";
 }

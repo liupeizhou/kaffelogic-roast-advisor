@@ -1,9 +1,16 @@
 export type UploadFileKind = "kpro" | "klog" | "log_image" | "unknown";
 export type ParseStatus = "parsed" | "needs_review" | "failed";
+export type ProfileOrientation = "Filter" | "Espresso";
 
 export type CurvePoint = {
   timeSeconds: number;
   value: number;
+};
+
+export type BezierAnchor = {
+  position: CurvePoint;
+  leftCtrl: CurvePoint;
+  rightCtrl: CurvePoint;
 };
 
 export type KproProfile = {
@@ -19,6 +26,8 @@ export type KproProfile = {
   roastCurvePoints: CurvePoint[];
   fanCurvePoints: CurvePoint[];
   rawFields: Record<string, string>;
+  orientation?: ProfileOrientation | null;
+  anchors?: BezierAnchor[];
 };
 
 export type RoastMetric = {

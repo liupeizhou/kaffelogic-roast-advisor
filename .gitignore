@@ -8,6 +8,7 @@ ops/
 .env*.local
 *.log
 *.tsbuildinfo
+.playwright-mcp/
 .DS_Store
 ._*
 .vercel

@@ -13,6 +13,7 @@ const config = [
       ".next/**",
       "node_modules/**",
       "coverage/**",
+      "public/**/*.js",
       "**/._*",
       "next-env.d.ts"
     ]

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Alert, Button, Card, Col, Input, InputNumber, List, Row, Select, Space, Spin, Statistic, Steps, Tag, Tooltip, Upload } from "antd";
+import { Alert, Button, Card, Col, Empty, Input, InputNumber, Row, Select, Space, Spin, Statistic, Steps, Tag, Tooltip, Upload } from "antd";
 import type { UploadProps } from "antd";
 import { Database, Download, FolderInput, RefreshCw, Search, UploadCloud } from "lucide-react";
 import AnimatedRoastCurve, { type AnimatedRoastProfile } from "@/components/animated-roast-curve";
@@ -470,26 +470,21 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
                       {zh ? "生成初始评分推荐" : "Generate initial score"}
                     </Button>
                   </Space>
-                  <List
-                    size="small"
-                    header={zh ? "变更记录（可回滚到某次变更前）" : "Audit log (rollback to before a change)"}
-                    dataSource={changeLogs}
-                    locale={{ emptyText: zh ? "暂无变更记录" : "No changes yet" }}
-                    renderItem={(item) => (
-                      <List.Item
-                        actions={[
-                          <Button key="rollback" size="small" onClick={() => rollbackTaxonomy(item.id)} loading={taxonomySaving}>
-                            {zh ? "回滚" : "Rollback"}
-                          </Button>
-                        ]}
-                      >
-                        <List.Item.Meta
-                          title={`${actionLabel(item.action, zh)} · ${new Date(item.created_at).toLocaleString(zh ? "zh-CN" : "en-US", { hour12: false })}`}
-                          description={item.note || (zh ? "无备注" : "No note")}
-                        />
-                      </List.Item>
-                    )}
-                  />
+                  <section className="audit-log-list">
+                    <h3>{zh ? "变更记录（可回滚到某次变更前）" : "Audit log (rollback to before a change)"}</h3>
+                    {!changeLogs.length ? <Empty description={zh ? "暂无变更记录" : "No changes yet"} /> : null}
+                    {changeLogs.map((item) => (
+                      <div key={item.id} className="audit-log-item">
+                        <div>
+                          <strong>{actionLabel(item.action, zh)} · {new Date(item.created_at).toLocaleString(zh ? "zh-CN" : "en-US", { hour12: false })}</strong>
+                          <p className="muted">{item.note || (zh ? "无备注" : "No note")}</p>
+                        </div>
+                        <Button size="small" onClick={() => rollbackTaxonomy(item.id)} loading={taxonomySaving}>
+                          {zh ? "回滚" : "Rollback"}
+                        </Button>
+                      </div>
+                    ))}
+                  </section>
                 </Space>
               </Spin>
             </Card>

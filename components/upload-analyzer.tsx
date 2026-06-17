@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, FileUp, History, Save, Star, UploadCloud } from "lucide-react";
-import { Alert, Button, Card, Col, Descriptions, Divider, Empty, Image, List, Row, Select, Space, Statistic, Tag, Upload } from "antd";
+import { Alert, Button, Card, Col, Descriptions, Divider, Empty, Image, Row, Select, Space, Statistic, Tag, Upload } from "antd";
 import type { UploadProps } from "antd";
 import CurveChart from "@/components/curve-chart";
 import CurveRadarChart from "@/components/curve-radar-chart";
@@ -373,7 +373,9 @@ function ScorePanel({
               <Col xs={24} md={6}><Statistic title="平均温差" value={score.metrics.avgAbsDeltaC} suffix="C" /></Col>
               <Col xs={24} md={6}><Statistic title="最大温差" value={score.metrics.maxAbsDeltaC} suffix="C" /></Col>
             </Row>
-            <List size="small" dataSource={score.notes} renderItem={(note) => <List.Item>{note}</List.Item>} />
+            <ul className="compact-list">
+              {score.notes.map((note) => <li key={note}>{note}</li>)}
+            </ul>
           </Card>
         ) : null}
       </Space>
@@ -395,32 +397,26 @@ function UploadHistory({
   return (
     <Card title={<span className="card-title"><History size={18} />上传历史</span>} extra={<Button size="small" onClick={onRefresh} loading={loading}>刷新</Button>}>
       {!history.length && !loading ? <Empty description="还没有上传历史" /> : null}
-      <List
-        loading={loading}
-        dataSource={history}
-        renderItem={(item) => {
+      {loading ? <p className="muted">加载中...</p> : null}
+      <div className="upload-history-list" aria-busy={loading}>
+        {history.map((item) => {
           const analysis = item.log?.confirmed_analysis ?? item.log?.ai_analysis ?? null;
           return (
-            <List.Item
-              actions={[
-                <Button key="open" size="small" onClick={() => onOpen(item)}>查看</Button>
-              ]}
-            >
-              <List.Item.Meta
-                title={
-                  <Space size={8} wrap>
-                    <span>{item.upload.file_name}</span>
-                    <Tag color="blue">{item.upload.file_kind}</Tag>
-                    <Tag color={item.upload.parse_status === "parsed" ? "green" : item.upload.parse_status === "needs_review" ? "orange" : "red"}>{item.upload.parse_status}</Tag>
-                    {item.latestScore ? <Tag color="gold">评分 {item.latestScore.score}</Tag> : null}
-                  </Space>
-                }
-                description={analysis?.summary ?? item.profile?.description ?? `上传于 ${formatDate(item.upload.created_at)}`}
-              />
-            </List.Item>
+            <div key={item.upload.id} className="upload-history-item">
+              <div>
+                <Space size={8} wrap>
+                  <span>{item.upload.file_name}</span>
+                  <Tag color="blue">{item.upload.file_kind}</Tag>
+                  <Tag color={item.upload.parse_status === "parsed" ? "green" : item.upload.parse_status === "needs_review" ? "orange" : "red"}>{item.upload.parse_status}</Tag>
+                  {item.latestScore ? <Tag color="gold">评分 {item.latestScore.score}</Tag> : null}
+                </Space>
+                <p className="muted">{analysis?.summary ?? item.profile?.description ?? `上传于 ${formatDate(item.upload.created_at)}`}</p>
+              </div>
+              <Button size="small" onClick={() => onOpen(item)}>查看</Button>
+            </div>
           );
-        }}
-      />
+        })}
+      </div>
     </Card>
   );
 }
@@ -535,7 +531,9 @@ function TextList({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
       <Divider>{title}</Divider>
-      <List size="small" dataSource={items} renderItem={(item) => <List.Item>{item}</List.Item>} />
+      <ul className="compact-list">
+        {items.map((item) => <li key={item}>{item}</li>)}
+      </ul>
     </div>
   );
 }

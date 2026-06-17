@@ -15,7 +15,7 @@ describe("generateKaffelogicProfile", () => {
     expect(profile.roastCurvePoints.length).toBeGreaterThan(20);
     expect(profile.fanCurvePoints.length).toBeGreaterThanOrEqual(4);
     expect(reparsed.roastCurvePoints.length).toBe(profile.roastCurvePoints.length);
-    expect(reparsed.rawFields.profile_generator).toBe("kaffelogic-roast-advisor-target-generator");
+    expect(reparsed.rawFields.profile_generator).toBe("kaffelogic-roast-advisor-bezier-generator");
   });
 
   it("keeps the generated temperature curve monotonic through drop", () => {

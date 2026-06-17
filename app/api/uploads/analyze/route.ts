@@ -3,6 +3,8 @@ import { requireUserResponse } from "@/lib/auth";
 import { createNeedsReviewAnalysis } from "@/lib/diagnostics";
 import { analyzeKlog, parseKlog } from "@/lib/klog";
 import { parseKpro } from "@/lib/kpro";
+import { optimizeProfileCurve } from "@/lib/curve-optimizer";
+import { sampleBezierAnchors } from "@/lib/curve-bezier";
 import { analyzeRoastLogImage } from "@/lib/openai-vision";
 import { chargeSuccessfulAnalysis, getQuotaSnapshot } from "@/lib/quota";
 import { checkFixedWindowRateLimit } from "@/lib/rate-limit";
@@ -91,6 +93,26 @@ export async function POST(request: Request) {
       const text = buffer.toString("utf8");
       profile = parseKpro(text, file.name);
       if (!profile.shortName && !profile.roastCurvePoints.length) status = "needs_review";
+
+      // Auto-optimize RoR curve if anchors present
+      if (profile.anchors && profile.anchors.length >= 4 && profile.expectedFirstCrackTemp && profile.expectedColourChangeTemp) {
+        try {
+          const dropTemp = profile.roastCurvePoints.length ? profile.roastCurvePoints.at(-1)!.value : 216.8;
+          const events = {
+            ccTemp: profile.expectedColourChangeTemp,
+            fcTemp: profile.expectedFirstCrackTemp,
+            dropTemp
+          };
+          const result = optimizeProfileCurve(profile.anchors, events);
+          if (result.optimized && result.acceptance?.accepted) {
+            profile.anchors = result.optimized;
+            const { tempPoints } = sampleBezierAnchors(result.optimized, 15);
+            profile.roastCurvePoints = tempPoints;
+          }
+        } catch {
+          // ponytail: auto-optimize is best-effort, never block upload
+        }
+      }
     } else if (fileKind === "klog") {
       const text = buffer.toString("utf8");
       klog = parseKlog(text, file.name);
