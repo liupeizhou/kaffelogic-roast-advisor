@@ -61,6 +61,10 @@ export async function getPublicRuntimeConfig(): Promise<PublicRuntimeConfig> {
 }
 
 export async function updateRuntimeConfig(input: Partial<Record<string, string>>) {
+  if (!canWriteRuntimeConfig()) {
+    throw new Error("生产环境不允许通过后台写入运行时配置，请在部署平台环境变量中配置。");
+  }
+
   const current = await readEnvFile();
   const next = { ...current };
 
@@ -85,6 +89,10 @@ export async function updateRuntimeConfig(input: Partial<Record<string, string>>
 
   await writeEnvFile(next);
   return getPublicRuntimeConfig();
+}
+
+export function canWriteRuntimeConfig() {
+  return process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1";
 }
 
 export function configSignature(config: RuntimeConfig): string {

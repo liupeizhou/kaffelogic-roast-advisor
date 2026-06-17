@@ -1,5 +1,3 @@
-import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { parseKpro } from "@/lib/kpro";
@@ -13,7 +11,6 @@ import { buildStoragePath, hashBuffer } from "@/lib/uploads";
 
 export const runtime = "nodejs";
 
-const DEFAULT_REFERENCE_ROOT = "/Volumes/Extreme SSD/01_下载归档_Downloads/kaffelogic项目";
 const MAX_IMPORT_FILES = 300;
 
 type ImportItem = {
@@ -30,35 +27,21 @@ export async function POST(request: Request) {
 
   try {
     const contentType = request.headers.get("content-type") ?? "";
-    if (contentType.includes("multipart/form-data")) {
-      const formData = await request.formData();
-      const files = formData.getAll("files").filter((file): file is File => file instanceof File).slice(0, MAX_IMPORT_FILES);
-      const items: ImportItem[] = [];
-      for (const file of files) {
-        items.push(await importKproFileBuffer(file.name, Buffer.from(await file.arrayBuffer()), "uploaded"));
-      }
-      return NextResponse.json(buildImportSummary("uploaded-files", items));
+    if (!contentType.includes("multipart/form-data")) {
+      return NextResponse.json({
+        error: "参考曲线导入仅支持 multipart/form-data 文件上传，不支持服务器目录路径。"
+      }, { status: 415 });
     }
 
-    const body = await request.json().catch(() => ({})) as { rootPath?: string };
-    const rootPath = typeof body.rootPath === "string" && body.rootPath.trim()
-      ? body.rootPath.trim()
-      : DEFAULT_REFERENCE_ROOT;
-
-    const rootStats = await stat(rootPath);
-    if (!rootStats.isDirectory()) {
-      return NextResponse.json({ error: "参考目录不是有效文件夹。", rootPath }, { status: 400 });
-    }
-
-    const files = (await collectKproFiles(rootPath)).slice(0, MAX_IMPORT_FILES);
+    const formData = await request.formData();
+    const files = formData.getAll("files").filter((file): file is File => file instanceof File).slice(0, MAX_IMPORT_FILES);
     const items: ImportItem[] = [];
 
-    for (const filePath of files) {
-      const fileName = basename(filePath);
-      items.push(await importKproFileBuffer(fileName, await readFile(filePath), filePath));
+    for (const file of files) {
+      items.push(await importKproFileBuffer(file.name, Buffer.from(await file.arrayBuffer()), "uploaded"));
     }
 
-    return NextResponse.json(buildImportSummary(rootPath, items));
+    return NextResponse.json(buildImportSummary("uploaded-files", items));
   } catch (error) {
     const message = error instanceof Error ? error.message : "批量导入失败。";
     const statusCode = message.includes("Supabase 尚未配置") ? 503 : 500;
@@ -116,30 +99,13 @@ async function importKproFileBuffer(fileName: string, buffer: Buffer, path: stri
   }
 }
 
-function buildImportSummary(rootPath: string, items: ImportItem[]) {
+function buildImportSummary(source: string, items: ImportItem[]) {
   return {
-    rootPath,
+    source,
     total: items.length,
     imported: items.filter((item) => item.status === "imported").length,
     skipped: items.filter((item) => item.status === "skipped").length,
     failed: items.filter((item) => item.status === "failed").length,
     items
   };
-}
-
-async function collectKproFiles(rootPath: string): Promise<string[]> {
-  const entries = await readdir(rootPath, { withFileTypes: true });
-  const files: string[] = [];
-
-  for (const entry of entries) {
-    if (entry.name.startsWith("._") || entry.name === ".DS_Store") continue;
-    const absolutePath = join(rootPath, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...await collectKproFiles(absolutePath));
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".kpro")) {
-      files.push(absolutePath);
-    }
-  }
-
-  return files.sort((a, b) => a.localeCompare(b));
 }

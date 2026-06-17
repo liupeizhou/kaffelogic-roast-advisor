@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Alert, Button, Card, Col, Collapse, Input, InputNumber, List, Row, Select, Space, Spin, Statistic, Steps, Tag, Tooltip, Upload } from "antd";
+import { Alert, Button, Card, Col, Input, InputNumber, List, Row, Select, Space, Spin, Statistic, Steps, Tag, Tooltip, Upload } from "antd";
 import type { UploadProps } from "antd";
 import { Database, Download, FolderInput, RefreshCw, Search, UploadCloud } from "lucide-react";
 import AnimatedRoastCurve, { type AnimatedRoastProfile } from "@/components/animated-roast-curve";
@@ -19,7 +19,7 @@ type ProfilesResponse = {
 };
 
 type ImportResponse = {
-  rootPath: string;
+  source: string;
   total: number;
   imported: number;
   skipped: number;
@@ -47,15 +47,12 @@ type TaxonomyResponse = {
   error?: string;
 };
 
-const DEFAULT_REFERENCE_ROOT = "/Volumes/Extreme SSD/01_下载归档_Downloads/kaffelogic项目";
-
 export default function LibraryDashboard({ locale = "zh", mode = "customer" }: { locale?: Locale; mode?: "customer" | "admin" }) {
   const zh = locale === "zh";
   const isAdmin = mode === "admin";
   const [profiles, setProfiles] = useState<RoastProfileRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [rootPath, setRootPath] = useState(DEFAULT_REFERENCE_ROOT);
   const [importFiles, setImportFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -88,27 +85,6 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
       setLoading(false);
     }
   }, [zh]);
-
-  async function importReferenceCurves() {
-    setImporting(true);
-    setError(null);
-    setImportResult(null);
-    try {
-      const response = await fetch("/api/import/reference-curves", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rootPath })
-      });
-      const payload = await response.json() as ImportResponse;
-      if (!response.ok) throw new Error(payload.error ?? (zh ? "导入参考曲线失败。" : "Failed to import reference curves."));
-      setImportResult(payload);
-      await loadProfiles();
-    } catch (importError) {
-      setError(importError instanceof Error ? importError.message : (zh ? "导入参考曲线失败。" : "Failed to import reference curves."));
-    } finally {
-      setImporting(false);
-    }
-  }
 
   async function importReferenceFiles() {
     if (!importFiles.length) return;
@@ -295,7 +271,7 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
             <Button icon={<RefreshCw size={16} />} onClick={loadProfiles} loading={loading} />
           </Tooltip>
           {isAdmin ? (
-            <Button type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceCurves} loading={importing}>
+            <Button type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceFiles} loading={importing} disabled={!importFiles.length}>
               {zh ? "导入参考曲线" : "Import references"}
             </Button>
           ) : null}
@@ -344,22 +320,7 @@ export default function LibraryDashboard({ locale = "zh", mode = "customer" }: {
                 <Button block type="primary" icon={<UploadCloud size={16} />} onClick={importReferenceFiles} loading={importing} disabled={!importFiles.length}>
                   {zh ? `上传并导入 ${importFiles.length} 条` : `Upload and import ${importFiles.length}`}
                 </Button>
-                <Collapse
-                  size="small"
-                  items={[{
-                    key: "path",
-                    label: zh ? "本地开发：按服务器目录扫描" : "Local dev: scan server path",
-                    children: (
-                      <Space orientation="vertical" size={10} className="full-width">
-                        <Input value={rootPath} onChange={(event) => setRootPath(event.target.value)} />
-                        <Button block icon={<FolderInput size={16} />} onClick={importReferenceCurves} loading={importing}>
-                          {zh ? "扫描并写入 Supabase" : "Scan and write to Supabase"}
-                        </Button>
-                      </Space>
-                    )
-                  }]}
-                />
-                <span className="muted">{zh ? "生产环境请用上方文件上传导入；重复文件按 hash 去重。" : "Use file upload in production; duplicates are de-duped by hash."}</span>
+                <span className="muted">{zh ? "生产环境仅支持文件上传导入；重复文件按 hash 去重。" : "Production import only accepts uploaded files; duplicates are de-duped by hash."}</span>
               </Space>
             </Card>
           ) : null}

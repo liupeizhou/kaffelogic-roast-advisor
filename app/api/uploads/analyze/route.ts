@@ -5,6 +5,7 @@ import { analyzeKlog, parseKlog } from "@/lib/klog";
 import { parseKpro } from "@/lib/kpro";
 import { analyzeRoastLogImage } from "@/lib/openai-vision";
 import { chargeSuccessfulAnalysis, getQuotaSnapshot } from "@/lib/quota";
+import { checkFixedWindowRateLimit } from "@/lib/rate-limit";
 import {
   findExistingUpload,
   insertUploadRecord,
@@ -14,7 +15,7 @@ import {
 } from "@/lib/roast-persistence";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { ParseStatus, UploadAnalysisResult } from "@/lib/types";
-import { assertUploadAllowed, buildStoragePath, classifyUpload, hashBuffer, toDataUrl } from "@/lib/uploads";
+import { assertUploadAllowed, buildStoragePath, hashBuffer, inspectUploadContent, toDataUrl } from "@/lib/uploads";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,21 @@ export async function POST(request: Request) {
   if (denied) return denied;
 
   try {
+    const rateLimit = checkFixedWindowRateLimit({
+      key: `upload-analyze:${user.id}`,
+      limit: 8,
+      windowMs: 60_000
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json({
+        error: "上传分析请求过于频繁，请稍后再试。",
+        retryAfterSeconds: rateLimit.retryAfterSeconds
+      }, {
+        status: 429,
+        headers: { "Retry-After": String(rateLimit.retryAfterSeconds) }
+      });
+    }
+
     const supabase = await getSupabaseAdmin();
     if (!supabase) {
       return NextResponse.json({ error: "Supabase 尚未配置，无法保存上传和扣减额度。" }, { status: 503 });
@@ -42,9 +58,9 @@ export async function POST(request: Request) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const textPreview = buffer.subarray(0, 2048).toString("utf8");
     const hash = hashBuffer(buffer);
-    const fileKind = classifyUpload(file.name, file.type, textPreview);
+    const inspected = inspectUploadContent(file.name, file.type, buffer);
+    const { fileKind, mimeType } = inspected;
 
     if (fileKind === "unknown") {
       return NextResponse.json<UploadAnalysisResult>({
@@ -52,13 +68,13 @@ export async function POST(request: Request) {
         hash,
         fileName: file.name,
         fileKind,
-        mimeType: file.type || "application/octet-stream",
+        mimeType,
         size: file.size,
         status: "failed",
         duplicate: false,
         storagePath: null,
         persisted: false,
-        error: "不支持的文件类型。请上传 .kpro 或 Kaffelogic log 图片。"
+        error: "不支持的文件类型，或上传内容与扩展名不匹配。请上传 .kpro、.klog 或 Kaffelogic log 图片。"
       }, { status: 415 });
     }
 
@@ -82,7 +98,7 @@ export async function POST(request: Request) {
       status = logAnalysis.needsReview ? "needs_review" : "parsed";
     } else if (fileKind === "log_image") {
       try {
-        logAnalysis = await analyzeRoastLogImage(toDataUrl(buffer, file.type || "image/png"));
+        logAnalysis = await analyzeRoastLogImage(toDataUrl(buffer, mimeType));
         status = logAnalysis.needsReview ? "needs_review" : "parsed";
       } catch (error) {
         logAnalysis = createNeedsReviewAnalysis(error instanceof Error ? error.message : "视觉解析失败");
@@ -93,13 +109,13 @@ export async function POST(request: Request) {
     let uploadId = existing?.id ?? null;
     let persisted = false;
     if (!existing && storagePath) {
-      await uploadOriginalFile(storagePath, buffer, file.type || "application/octet-stream");
+      await uploadOriginalFile(storagePath, buffer, mimeType);
       const upload = await insertUploadRecord({
         ownerId: user.id,
         fileName: file.name,
         hash,
         fileKind,
-        mimeType: file.type || "application/octet-stream",
+        mimeType,
         storagePath,
         sizeBytes: file.size,
         status,
@@ -133,7 +149,7 @@ export async function POST(request: Request) {
       hash,
       fileName: file.name,
       fileKind,
-      mimeType: file.type || "application/octet-stream",
+      mimeType,
       size: file.size,
       status,
       duplicate,

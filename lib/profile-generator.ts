@@ -84,23 +84,37 @@ export function defaultProfileGeneratorInput(locale: "zh" | "en" = "zh"): Profil
   };
 }
 
-export function getGeneratorSafetyNotes(input: ProfileGeneratorInput): string[] {
-  const notes = [
+export function getGeneratorSafetyNotes(input: ProfileGeneratorInput, locale: "zh" | "en" = "zh"): string[] {
+  const zh = locale === "zh";
+  const notes = zh ? [
     "Nano 7 不需要预热：先入生豆、盖好银皮桶，再直接启动烘焙；Start Temp 不是预热目标。",
     "生成曲线只是初稿：请在 CC、FC、Drop 以及发展段检查点手动微调节点，而不是直接当成最终可用曲线。",
     "Fan preview 必须执行：用实际生豆和目标载量观察翻动，理想状态是四周均匀翻动、中间缓慢但仍有翻动。"
+  ] : [
+    "Nano 7 needs no preheat: load green coffee, fit the chaff collector, then start the roast; Start Temp is not a preheat target.",
+    "Generated curves are drafts: manually adjust CC, FC, Drop and development checkpoints before treating the profile as roast-ready.",
+    "Fan preview is required: use the actual beans and target load, then confirm even movement around the chamber with slower but visible movement in the center."
   ];
   const fanDrop = input.fan.startRpm - input.fan.descentRpm;
   const descentTime = input.fc.t - input.fan.descentOffsetSec;
 
   if (fanDrop < 200) {
-    notes.push("风速下降幅度很小：豆子脱水变轻后可能翻动过快，建议用 Fan preview 或降低后段风速确认。");
+    notes.push(zh
+      ? "风速下降幅度很小：豆子脱水变轻后可能翻动过快，建议用 Fan preview 或降低后段风速确认。"
+      : "Fan descent is very small: beans may move too fast after drying and losing mass; confirm with Fan preview or lower the late-stage fan speed."
+    );
   }
   if (fanDrop > 1400 || input.fan.descentOffsetSec > 45) {
-    notes.push("风速下降偏激进：若翻动不足，可能导致受热不均或追温困难，请先提高后段风速或缩短下降提前量。");
+    notes.push(zh
+      ? "风速下降偏激进：若翻动不足，可能导致受热不均或追温困难，请先提高后段风速或缩短下降提前量。"
+      : "Fan descent is aggressive: weak bean movement can cause uneven heat transfer or poor profile tracking; raise late-stage fan speed or reduce the FC offset."
+    );
   }
   if (descentTime < input.cc.t || descentTime > input.fc.t + 20) {
-    notes.push("风速下降点与烘焙进程关系异常：建议让风速下降围绕 FC 前后展开，避免前段排湿或后段追温出问题。");
+    notes.push(zh
+      ? "风速下降点与烘焙进程关系异常：建议让风速下降围绕 FC 前后展开，避免前段排湿或后段追温出问题。"
+      : "Fan descent timing is detached from the roast process: keep the descent around FC to avoid drying-stage exhaust issues or late-stage tracking problems."
+    );
   }
   return notes;
 }

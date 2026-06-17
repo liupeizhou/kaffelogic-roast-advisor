@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "app/api/uploads/analyze/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/shares/route.ts": {
+      "maxDuration": 20
+    },
+    "app/api/share-image/[slug]/route.tsx": {
+      "maxDuration": 20
+    }
+  }
+}

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
-import { getPublicRuntimeConfig, updateRuntimeConfig } from "@/lib/runtime-config";
+import { canWriteRuntimeConfig, getPublicRuntimeConfig, updateRuntimeConfig } from "@/lib/runtime-config";
 
 export const runtime = "nodejs";
 
@@ -13,6 +13,11 @@ export async function GET() {
 export async function POST(request: Request) {
   const denied = await requireAdmin();
   if (denied) return denied;
+  if (!canWriteRuntimeConfig()) {
+    return NextResponse.json({
+      error: "生产环境不允许从后台写入 API Key。请在 Vercel/Supabase 环境变量中修改配置。"
+    }, { status: 403 });
+  }
 
   try {
     const body = await request.json();

@@ -61,6 +61,15 @@ describe("generateKaffelogicProfile", () => {
     expect(notes.some((note) => note.includes("预热"))).toBe(true);
   });
 
+  it("localizes generator safety notes for English editor users", () => {
+    const input = defaultProfileGeneratorInput("en");
+    const notes = getGeneratorSafetyNotes(input, "en").join(" ");
+
+    expect(notes).toContain("no preheat");
+    expect(notes).toContain("Fan preview");
+    expect(notes).not.toContain("预热");
+  });
+
   it("warns when fan descent is too aggressive for tracking stability", () => {
     const input = {
       ...defaultProfileGeneratorInput("en"),

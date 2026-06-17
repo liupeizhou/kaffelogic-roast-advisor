@@ -294,7 +294,7 @@ function ProfileTargetGenerator({ locale, value, onChange, onApply }: {
       return null;
     }
   }, [value]);
-  const safetyNotes = useMemo(() => getGeneratorSafetyNotes(value), [value]);
+  const safetyNotes = useMemo(() => getGeneratorSafetyNotes(value, locale), [locale, value]);
 
   function updateTarget(key: "cc" | "fc" | "drop", patch: Partial<RoastTarget>) {
     onChange({ ...value, [key]: { ...value[key], ...patch } });
