@@ -8,6 +8,7 @@ import AnimatedRoastCurve from "@/components/animated-roast-curve";
 import OfficialProfileGuide from "@/components/official-profile-guide";
 import { getDictionary, withLocale, type Locale } from "@/lib/i18n";
 import { parseKpro, serializeKpro } from "@/lib/kpro";
+import { defaultProfileGeneratorInput, generateKaffelogicProfile, type ProfileGeneratorInput, type RoastTarget } from "@/lib/profile-generator";
 import type { CurvePoint, KproProfile } from "@/lib/types";
 
 const DEFAULT_PROFILE: KproProfile = {
@@ -63,6 +64,7 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [generatorInput, setGeneratorInput] = useState<ProfileGeneratorInput>(() => defaultProfileGeneratorInput(locale));
 
   useEffect(() => {
     if (!curveId) return;
@@ -127,6 +129,20 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
     }
   }
 
+  function applyGenerator() {
+    setError(null);
+    setMessage(null);
+    try {
+      const generated = generateKaffelogicProfile(generatorInput);
+      setProfile(generated);
+      setRawText(JSON.stringify(generated.rawFields, null, 2));
+      setDocumentId(null);
+      setMessage(locale === "zh" ? "已根据目标节点生成 Kaffelogic 曲线，可继续微调或下载 .kpro。" : "Generated a Kaffelogic profile from target milestones. You can fine-tune or download it.");
+    } catch (generatorError) {
+      setError(generatorError instanceof Error ? generatorError.message : "Generate failed.");
+    }
+  }
+
   function downloadCurrent() {
     setError(null);
     try {
@@ -186,6 +202,18 @@ export default function CurveEditor({ locale, curveId }: { locale: Locale; curve
           />
           <Tabs
             items={[
+              {
+                key: "generator",
+                label: locale === "zh" ? "目标生成器" : "Target generator",
+                children: (
+                  <ProfileTargetGenerator
+                    locale={locale}
+                    value={generatorInput}
+                    onChange={setGeneratorInput}
+                    onApply={applyGenerator}
+                  />
+                )
+              },
               {
                 key: "metadata",
                 label: t.editor.metadata,
@@ -249,6 +277,115 @@ function MetadataEditor({ profile, onChange }: { profile: KproProfile; onChange:
       </Row>
       <Input value={profile.rawFields.target_roast_degree ?? ""} onChange={(event) => updateRawField("target_roast_degree", event.target.value)} placeholder="建议烘焙度 / Target roast degree" />
     </Space>
+  );
+}
+
+function ProfileTargetGenerator({ locale, value, onChange, onApply }: {
+  locale: Locale;
+  value: ProfileGeneratorInput;
+  onChange: (input: ProfileGeneratorInput) => void;
+  onApply: () => void;
+}) {
+  const zh = locale === "zh";
+  const preview = useMemo(() => {
+    try {
+      return generateKaffelogicProfile(value);
+    } catch {
+      return null;
+    }
+  }, [value]);
+
+  function updateTarget(key: "cc" | "fc" | "drop", patch: Partial<RoastTarget>) {
+    onChange({ ...value, [key]: { ...value[key], ...patch } });
+  }
+
+  function updateFan(patch: Partial<ProfileGeneratorInput["fan"]>) {
+    onChange({ ...value, fan: { ...value.fan, ...patch } });
+  }
+
+  function updateRor(patch: Partial<ProfileGeneratorInput["rorInterval"]>) {
+    onChange({ ...value, rorInterval: { ...value.rorInterval, ...patch } });
+  }
+
+  return (
+    <Space orientation="vertical" size={14} className="full-width">
+      <Alert
+        type="info"
+        showIcon
+        message={zh ? "按 Start / CC / FC / Drop 目标生成曲线" : "Generate a curve from Start / CC / FC / Drop targets"}
+        description={zh
+          ? "参考 BrewRoom 工具的使用方式：直接设定关键节点、RoR 优化区间和风速下降参数，然后生成可下载的 .kpro。"
+          : "Inspired by BrewRoom's workflow: set milestones, RoR decline interval and fan descent, then generate a downloadable .kpro."}
+      />
+      <Input
+        value={value.shortName}
+        onChange={(event) => onChange({ ...value, shortName: event.target.value })}
+        placeholder={zh ? "曲线名称" : "Profile name"}
+      />
+      <Row gutter={[10, 10]}>
+        <Col xs={24} md={8}>
+          <Card size="small" title="Start">
+            <InputNumber className="full-width" min={0} max={60} step={0.1} value={value.startTemp} addonAfter="C" onChange={(next) => onChange({ ...value, startTemp: Number(next ?? 0) })} />
+          </Card>
+        </Col>
+        <GeneratorTargetCard title="CC" target={value.cc} minTime={90} maxTime={360} minTemp={140} maxTemp={180} onChange={(patch) => updateTarget("cc", patch)} />
+        <GeneratorTargetCard title="FC" target={value.fc} minTime={210} maxTime={660} minTemp={180} maxTemp={220} onChange={(patch) => updateTarget("fc", patch)} />
+        <GeneratorTargetCard title="Drop" target={value.drop} minTime={300} maxTime={960} minTemp={190} maxTemp={240} onChange={(patch) => updateTarget("drop", patch)} />
+      </Row>
+      <Row gutter={[10, 10]}>
+        <Col xs={24} md={12}>
+          <Card size="small" title={zh ? "RoR 下降优化区间" : "RoR decline interval"}>
+            <Row gutter={8}>
+              <Col span={12}><InputNumber className="full-width" min={0} max={value.drop.t - 10} value={value.rorInterval.startSec} addonAfter="s" onChange={(next) => updateRor({ startSec: Number(next ?? 0) })} /></Col>
+              <Col span={12}><InputNumber className="full-width" min={value.rorInterval.startSec + 10} max={value.drop.t} value={value.rorInterval.endSec} addonAfter="s" onChange={(next) => updateRor({ endSec: Number(next ?? 0) })} /></Col>
+            </Row>
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card size="small" title={zh ? "风速控制" : "Fan control"}>
+            <Row gutter={8}>
+              <Col span={8}><InputNumber className="full-width" min={13000} max={15000} step={100} value={value.fan.startRpm} addonAfter="rpm" onChange={(next) => updateFan({ startRpm: Number(next ?? 14700) })} /></Col>
+              <Col span={8}><InputNumber className="full-width" min={13000} max={15000} step={100} value={value.fan.descentRpm} addonAfter="rpm" onChange={(next) => updateFan({ descentRpm: Number(next ?? 14200) })} /></Col>
+              <Col span={8}><InputNumber className="full-width" min={-60} max={60} value={value.fan.descentOffsetSec} addonAfter="s←FC" onChange={(next) => updateFan({ descentOffsetSec: Number(next ?? 5) })} /></Col>
+            </Row>
+          </Card>
+        </Col>
+      </Row>
+      {preview ? (
+        <div className="generator-preview-strip">
+          <span>{zh ? "推荐 Level" : "Recommended level"} <strong>{preview.recommendedLevel}</strong></span>
+          <span>{zh ? "温度点" : "Temp points"} <strong>{preview.roastCurvePoints.length}</strong></span>
+          <span>{zh ? "风速点" : "Fan points"} <strong>{preview.fanCurvePoints.length}</strong></span>
+          <span>{zh ? "预计一爆" : "Expected FC"} <strong>{preview.expectedFirstCrackTemp}C</strong></span>
+        </div>
+      ) : (
+        <Alert type="warning" showIcon message={zh ? "当前参数无法生成有效曲线，请检查时间和温度顺序。" : "Current parameters cannot generate a valid curve. Check time and temperature order."} />
+      )}
+      <Button type="primary" block onClick={onApply}>
+        {zh ? "生成曲线并应用到编辑器" : "Generate profile and apply to editor"}
+      </Button>
+    </Space>
+  );
+}
+
+function GeneratorTargetCard({ title, target, minTime, maxTime, minTemp, maxTemp, onChange }: {
+  title: string;
+  target: RoastTarget;
+  minTime: number;
+  maxTime: number;
+  minTemp: number;
+  maxTemp: number;
+  onChange: (patch: Partial<RoastTarget>) => void;
+}) {
+  return (
+    <Col xs={24} md={8}>
+      <Card size="small" title={title}>
+        <Row gutter={8}>
+          <Col span={12}><InputNumber className="full-width" min={minTime} max={maxTime} value={target.t} addonAfter="s" onChange={(next) => onChange({ t: Number(next ?? minTime) })} /></Col>
+          <Col span={12}><InputNumber className="full-width" min={minTemp} max={maxTemp} step={0.1} value={target.T} addonAfter="C" onChange={(next) => onChange({ T: Number(next ?? minTemp) })} /></Col>
+        </Row>
+      </Card>
+    </Col>
   );
 }
 

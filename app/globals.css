@@ -1012,6 +1012,30 @@ h3 {
   margin-top: 16px;
 }
 
+.generator-preview-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.generator-preview-strip span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf9;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.generator-preview-strip strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
 .editable-curve {
   touch-action: none;
   border: 1px solid var(--line);
@@ -1280,7 +1304,8 @@ blockquote {
   }
 
   .stage-metrics,
-  .detail-grid {
+  .detail-grid,
+  .generator-preview-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1299,7 +1324,8 @@ blockquote {
 
 @media (max-width: 560px) {
   .stage-metrics,
-  .detail-grid {
+  .detail-grid,
+  .generator-preview-strip {
     grid-template-columns: 1fr;
   }
 
