@@ -1036,6 +1036,26 @@ h3 {
   font-size: 16px;
 }
 
+.generator-note-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d8dfd8;
+  border-radius: 8px;
+  background: #f3f8f1;
+}
+
+.generator-note-panel strong {
+  color: #0f4f30;
+}
+
+.generator-note-panel ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .editable-curve {
   touch-action: none;
   border: 1px solid var(--line);

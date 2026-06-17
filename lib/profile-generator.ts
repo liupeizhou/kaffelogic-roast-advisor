@@ -34,6 +34,8 @@ export function generateKaffelogicProfile(input: ProfileGeneratorInput): KproPro
   const roastLevels = adjustedRoastLevels(input.drop.T);
   const recommendedLevel = dropTempToRecommendedLevel(input.drop.T, roastLevels);
   const rorDecline = estimateRorDecline(roastCurvePoints, input.rorInterval.startSec, input.rorInterval.endSec);
+  const adjustmentNodes = buildAdjustmentNodes(input, roastCurvePoints);
+  const safetyNotes = getGeneratorSafetyNotes(input);
 
   return {
     fileName: input.fileName ?? `${sanitizeName(input.shortName)}.kpro`,
@@ -60,7 +62,11 @@ export function generateKaffelogicProfile(input: ProfileGeneratorInput): KproPro
       generator_drop: `${input.drop.t},${round1(input.drop.T)}`,
       generator_ror_interval: `${input.rorInterval.startSec},${input.rorInterval.endSec}`,
       generator_fan: `${input.fan.startRpm},${input.fan.descentRpm},${input.fan.descentOffsetSec}`,
-      generator_ror_decline_c_per_min: String(round1(rorDecline))
+      generator_ror_decline_c_per_min: String(round1(rorDecline)),
+      generator_adjustment_nodes: adjustmentNodes.map((node) => `${node.label}@${node.timeSeconds}s/${node.temperatureC}C`).join("; "),
+      generator_preheat_policy: "Nano 7 no preheat: add green coffee, fit chaff collector, then start roast.",
+      generator_fan_preview_required: "true",
+      generator_safety_notes: safetyNotes.join(" | ")
     }
   };
 }
@@ -76,6 +82,27 @@ export function defaultProfileGeneratorInput(locale: "zh" | "en" = "zh"): Profil
     rorInterval: { startSec: 200, endSec: 400 },
     fan: { startRpm: 14700, descentRpm: 14200, descentOffsetSec: 5 }
   };
+}
+
+export function getGeneratorSafetyNotes(input: ProfileGeneratorInput): string[] {
+  const notes = [
+    "Nano 7 不需要预热：先入生豆、盖好银皮桶，再直接启动烘焙；Start Temp 不是预热目标。",
+    "生成曲线只是初稿：请在 CC、FC、Drop 以及发展段检查点手动微调节点，而不是直接当成最终可用曲线。",
+    "Fan preview 必须执行：用实际生豆和目标载量观察翻动，理想状态是四周均匀翻动、中间缓慢但仍有翻动。"
+  ];
+  const fanDrop = input.fan.startRpm - input.fan.descentRpm;
+  const descentTime = input.fc.t - input.fan.descentOffsetSec;
+
+  if (fanDrop < 200) {
+    notes.push("风速下降幅度很小：豆子脱水变轻后可能翻动过快，建议用 Fan preview 或降低后段风速确认。");
+  }
+  if (fanDrop > 1400 || input.fan.descentOffsetSec > 45) {
+    notes.push("风速下降偏激进：若翻动不足，可能导致受热不均或追温困难，请先提高后段风速或缩短下降提前量。");
+  }
+  if (descentTime < input.cc.t || descentTime > input.fc.t + 20) {
+    notes.push("风速下降点与烘焙进程关系异常：建议让风速下降围绕 FC 前后展开，避免前段排湿或后段追温出问题。");
+  }
+  return notes;
 }
 
 function validateGeneratorInput(input: ProfileGeneratorInput) {
@@ -115,17 +142,66 @@ function generateTemperatureCurve(input: ProfileGeneratorInput): CurvePoint[] {
     Math.min(segmentSlopes[1], segmentSlopes[2]) * 0.62,
     segmentSlopes[2] * 0.34
   ];
-  const points: CurvePoint[] = [];
+  const sampleTimes = new Set<number>();
   const step = input.drop.t <= 520 ? 15 : 20;
 
   for (let time = 0; time <= input.drop.t; time += step) {
-    points.push({ timeSeconds: time, value: round1(sampleHermite(nodes, tangents, time)) });
+    sampleTimes.add(time);
   }
-  if (points.at(-1)?.timeSeconds !== input.drop.t) {
-    points.push({ timeSeconds: input.drop.t, value: round1(input.drop.T) });
-  }
+  for (const time of explicitAdjustmentTimes(input)) sampleTimes.add(time);
 
-  return enforceMonotonic(points);
+  const points = [...sampleTimes]
+    .filter((time) => time >= 0 && time <= input.drop.t)
+    .sort((a, b) => a - b)
+    .map((time) => ({ timeSeconds: time, value: round1(sampleHermite(nodes, tangents, time)) }));
+
+  return enforceMilestones(enforceMonotonic(points), input);
+}
+
+function explicitAdjustmentTimes(input: ProfileGeneratorInput): number[] {
+  return [
+    0,
+    Math.max(30, Math.round(input.cc.t * 0.5)),
+    Math.max(0, input.cc.t - 25),
+    input.cc.t,
+    Math.round((input.cc.t + input.fc.t) / 2),
+    Math.max(input.cc.t + 1, input.fc.t - 35),
+    input.fc.t,
+    Math.min(input.drop.t - 1, input.fc.t + Math.round((input.drop.t - input.fc.t) * 0.45)),
+    Math.max(input.fc.t + 1, input.drop.t - 30),
+    input.drop.t
+  ].map((time) => Math.round(time));
+}
+
+function enforceMilestones(points: CurvePoint[], input: ProfileGeneratorInput) {
+  const milestoneValues = new Map<number, number>([
+    [0, round1(input.startTemp)],
+    [input.cc.t, round1(input.cc.T)],
+    [input.fc.t, round1(input.fc.T)],
+    [input.drop.t, round1(input.drop.T)]
+  ]);
+
+  const merged = new Map(points.map((point) => [point.timeSeconds, point.value]));
+  for (const [time, value] of milestoneValues) merged.set(time, value);
+  return [...merged.entries()]
+    .map(([timeSeconds, value]) => ({ timeSeconds, value }))
+    .sort((a, b) => a.timeSeconds - b.timeSeconds);
+}
+
+function buildAdjustmentNodes(input: ProfileGeneratorInput, points: CurvePoint[]) {
+  const nodeTimes = [
+    { label: "Start", timeSeconds: 0 },
+    { label: "Drying adjust", timeSeconds: Math.max(30, Math.round(input.cc.t * 0.5)) },
+    { label: "CC", timeSeconds: input.cc.t },
+    { label: "Maillard adjust", timeSeconds: Math.round((input.cc.t + input.fc.t) / 2) },
+    { label: "FC", timeSeconds: input.fc.t },
+    { label: "Development adjust", timeSeconds: Math.min(input.drop.t - 1, input.fc.t + Math.round((input.drop.t - input.fc.t) * 0.45)) },
+    { label: "Drop", timeSeconds: input.drop.t }
+  ];
+  return nodeTimes.map((node) => ({
+    ...node,
+    temperatureC: round1(interpolate(points, node.timeSeconds))
+  }));
 }
 
 function sampleHermite(nodes: Array<{ t: number; T: number }>, tangents: number[], time: number) {

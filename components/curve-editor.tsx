@@ -8,7 +8,7 @@ import AnimatedRoastCurve from "@/components/animated-roast-curve";
 import OfficialProfileGuide from "@/components/official-profile-guide";
 import { getDictionary, withLocale, type Locale } from "@/lib/i18n";
 import { parseKpro, serializeKpro } from "@/lib/kpro";
-import { defaultProfileGeneratorInput, generateKaffelogicProfile, type ProfileGeneratorInput, type RoastTarget } from "@/lib/profile-generator";
+import { defaultProfileGeneratorInput, generateKaffelogicProfile, getGeneratorSafetyNotes, type ProfileGeneratorInput, type RoastTarget } from "@/lib/profile-generator";
 import type { CurvePoint, KproProfile } from "@/lib/types";
 
 const DEFAULT_PROFILE: KproProfile = {
@@ -294,6 +294,7 @@ function ProfileTargetGenerator({ locale, value, onChange, onApply }: {
       return null;
     }
   }, [value]);
+  const safetyNotes = useMemo(() => getGeneratorSafetyNotes(value), [value]);
 
   function updateTarget(key: "cc" | "fc" | "drop", patch: Partial<RoastTarget>) {
     onChange({ ...value, [key]: { ...value[key], ...patch } });
@@ -314,8 +315,8 @@ function ProfileTargetGenerator({ locale, value, onChange, onApply }: {
         showIcon
         message={zh ? "按 Start / CC / FC / Drop 目标生成曲线" : "Generate a curve from Start / CC / FC / Drop targets"}
         description={zh
-          ? "参考 BrewRoom 工具的使用方式：直接设定关键节点、RoR 优化区间和风速下降参数，然后生成可下载的 .kpro。"
-          : "Inspired by BrewRoom's workflow: set milestones, RoR decline interval and fan descent, then generate a downloadable .kpro."}
+          ? "这只是带关键节点的曲线初稿，不是直接可烘焙的最终曲线。生成后请继续检查 CC、FC、发展段和风速。"
+          : "This is a milestone-based draft, not a final roast-ready profile. After generation, review CC, FC, development and fan behavior."}
       />
       <Input
         value={value.shortName}
@@ -352,12 +353,20 @@ function ProfileTargetGenerator({ locale, value, onChange, onApply }: {
         </Col>
       </Row>
       {preview ? (
-        <div className="generator-preview-strip">
-          <span>{zh ? "推荐 Level" : "Recommended level"} <strong>{preview.recommendedLevel}</strong></span>
-          <span>{zh ? "温度点" : "Temp points"} <strong>{preview.roastCurvePoints.length}</strong></span>
-          <span>{zh ? "风速点" : "Fan points"} <strong>{preview.fanCurvePoints.length}</strong></span>
-          <span>{zh ? "预计一爆" : "Expected FC"} <strong>{preview.expectedFirstCrackTemp}C</strong></span>
-        </div>
+        <>
+          <div className="generator-preview-strip">
+            <span>{zh ? "推荐 Level" : "Recommended level"} <strong>{preview.recommendedLevel}</strong></span>
+            <span>{zh ? "温度点/节点" : "Temp points"} <strong>{preview.roastCurvePoints.length}</strong></span>
+            <span>{zh ? "风速点" : "Fan points"} <strong>{preview.fanCurvePoints.length}</strong></span>
+            <span>{zh ? "预计一爆" : "Expected FC"} <strong>{preview.expectedFirstCrackTemp}C</strong></span>
+          </div>
+          <div className="generator-note-panel">
+            <strong>{zh ? "生成前检查" : "Pre-generation checks"}</strong>
+            <ul>
+              {safetyNotes.map((note) => <li key={note}>{note}</li>)}
+            </ul>
+          </div>
+        </>
       ) : (
         <Alert type="warning" showIcon message={zh ? "当前参数无法生成有效曲线，请检查时间和温度顺序。" : "Current parameters cannot generate a valid curve. Check time and temperature order."} />
       )}
