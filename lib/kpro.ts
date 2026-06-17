@@ -202,6 +202,79 @@ export function denormalizeText(value = ""): string {
   return value.replace(/\r?\n/g, "\\v");
 }
 
+// Kaffelogic Studio field groups (from kaffelogic_studio_defaults.py)
+// Fields not saved in profile data — informational only
+export const LOG_ONLY_FIELDS = new Set([
+  "profile_file_name", "profile_modified", "native_schema_version", "roasting_level",
+  "colour_change", "first_crack", "first_crack_end", "second_crack", "second_crack_end",
+  "roast_end", "development_percent", "tasting_notes", "model", "firmware_version",
+  "motor_hours", "heater_hours", "ambient_temperature", "mains_voltage",
+  "heater_power_available", "power_factor", "density_factor", "reference_temperature",
+  "back2back_count", "time_jump", "preheat_heater_percent", "calibration_data",
+  "ambient_cutoff_reference", "ambient_cutoff_probe", "ambient_cutoff_difference",
+  "ambient_default_temperature", "cooldown_end_temperature", "cooldown_end_ror_1st",
+  "cooldown_end_ror_b2b", "cooldown_slow_time"
+]);
+
+// Fields displayed in min:sec format in Studio
+export const TIME_FIELDS = new Set([
+  "time_jump", "preheat_min_time", "preheat_max_time", "preheat_check_gradient_time",
+  "preheat_target_in_future", "roast_target_in_future", "roast_target_timeshift",
+  ...["zone1_time_start", "zone1_time_end", "zone2_time_start", "zone2_time_end",
+     "zone3_time_start", "zone3_time_end", "corner1_time_start", "corner1_time_end"],
+  ...["colour_change", "first_crack", "first_crack_end", "second_crack", "second_crack_end", "roast_end"]
+]);
+
+// Temperature parameters (always °C internally, displayed per unit preference)
+export const TEMPERATURE_FIELDS = new Set([
+  "expect_fc", "expect_colrchange", "preheat_nominal_temperature",
+  "specific_heat_adj_upper_temperature_limit", "specific_heat_adj_lower_temperature_limit",
+  "cooldown_lo_temperature", "ambient_temperature", "reference_temperature",
+  "ambient_cutoff_reference", "ambient_cutoff_probe", "ambient_default_temperature",
+  "cooldown_end_temperature"
+]);
+
+// Temperature delta parameters (rate-of-change, proximity thresholds)
+export const TEMPERATURE_DELTA_FIELDS = new Set([
+  "preheat_temperature_proximity", "roast_min_desired_rate_of_rise",
+  "ambient_cutoff_difference", "cooldown_end_ror_1st", "cooldown_end_ror_b2b"
+]);
+
+// User-editable metadata
+export const METADATA_FIELDS = new Set([
+  "profile_short_name", "profile_designer", "profile_description"
+]);
+
+// Machine control settings (PID, zones, boost)
+export const CONTROL_FIELDS = new Set([
+  "zone1_time_start", "zone1_time_end", "zone1_multiplier_Kp", "zone1_multiplier_Kd", "zone1_boost",
+  "zone2_time_start", "zone2_time_end", "zone2_multiplier_Kp", "zone2_multiplier_Kd", "zone2_boost",
+  "zone3_time_start", "zone3_time_end", "zone3_multiplier_Kp", "zone3_multiplier_Kd", "zone3_boost",
+  "corner1_time_start", "corner1_time_end"
+]);
+
+/**
+ * Filter rawFields into editor-visible vs internal groups.
+ */
+export function filterEditorFields(rawFields: Record<string, string>): {
+  metadata: Record<string, string>;
+  phases: Record<string, string>;
+  controls: Record<string, string>;
+  internal: Record<string, string>;
+} {
+  const metadata: Record<string, string> = {};
+  const phases: Record<string, string> = {};
+  const controls: Record<string, string> = {};
+  const internal: Record<string, string> = {};
+  for (const [key, value] of Object.entries(rawFields)) {
+    if (METADATA_FIELDS.has(key)) metadata[key] = value;
+    else if (key === "recommended_level" || key === "expect_fc" || key === "expect_colrchange" || key === "roast_levels") phases[key] = value;
+    else if (CONTROL_FIELDS.has(key)) controls[key] = value;
+    else if (!LOG_ONLY_FIELDS.has(key)) internal[key] = value;
+  }
+  return { metadata, phases, controls, internal };
+}
+
 export function parseOptionalNumber(value?: string): number | null {
   if (!value) return null;
   const trimmed = value.trim();

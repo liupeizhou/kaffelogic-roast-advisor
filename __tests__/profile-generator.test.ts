@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultProfileGeneratorInput, generateKaffelogicProfile, getGeneratorSafetyNotes } from "@/lib/profile-generator";
+import { defaultProfileGeneratorInput, generateKaffelogicProfile, getGeneratorSafetyNotes, recalculateControlPoints } from "@/lib/profile-generator";
 import { parseKpro, serializeKpro } from "@/lib/kpro";
 
 describe("generateKaffelogicProfile", () => {
@@ -77,5 +77,40 @@ describe("generateKaffelogicProfile", () => {
     };
 
     expect(getGeneratorSafetyNotes(input).join(" ")).toContain("追温");
+  });
+
+  it("enforces Studio physical bounds for fan speed and total roast time", () => {
+    const input = defaultProfileGeneratorInput("en");
+
+    expect(() => generateKaffelogicProfile({
+      ...input,
+      fan: { ...input.fan, startRpm: 7999 }
+    })).toThrow("Fan RPM");
+
+    expect(() => generateKaffelogicProfile({
+      ...input,
+      drop: { ...input.drop, t: 20 * 60 + 1 }
+    })).toThrow("Drop time");
+  });
+
+  it("recalculates smooth control points without mutating anchors", () => {
+    const profile = generateKaffelogicProfile(defaultProfileGeneratorInput("en"));
+    const original = structuredClone(profile.anchors!);
+    const moved = structuredClone(profile.anchors!);
+    moved[2].position.value += 3;
+    const movedBefore = structuredClone(moved);
+
+    const recalculated = recalculateControlPoints(moved);
+
+    expect(moved).toEqual(movedBefore);
+    expect(recalculated).not.toEqual(movedBefore);
+    expect(profile.anchors).toEqual(original);
+    expect(recalculated[0].leftCtrl).toEqual({ timeSeconds: 0, value: 0 });
+    expect(recalculated.at(-1)?.rightCtrl).toEqual({ timeSeconds: 0, value: 0 });
+
+    for (let index = 1; index < recalculated.length; index += 1) {
+      expect(recalculated[index].leftCtrl.timeSeconds).toBeGreaterThan(recalculated[index - 1].position.timeSeconds);
+      expect(recalculated[index - 1].rightCtrl.timeSeconds).toBeLessThan(recalculated[index].position.timeSeconds);
+    }
   });
 });

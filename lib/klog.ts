@@ -1,4 +1,5 @@
 import { parseCurvePoints, parseNumberList, parseOptionalNumber } from "@/lib/kpro";
+import { fitPath, segmentsToAnchors } from "@/lib/path-fitter";
 import type { KlogParseResult, KlogSample, RoastLogAnalysis } from "@/lib/types";
 
 const TABLE_HEADER_PREFIX = "time\t";
@@ -14,6 +15,7 @@ export function parseKlog(text: string, fileName = "uploaded.klog"): KlogParseRe
   const fields = parseHeaderFields(tableHeaderIndex >= 0 ? lines.slice(0, tableHeaderIndex) : lines);
   const samples = tableHeaderIndex >= 0 ? parseSamples(lines.slice(tableHeaderIndex)) : [];
   const metrics = calculateMetrics(fields, samples);
+  const fittedRoastAnchors = fitActualTemperatureAnchors(samples, metrics.roastEndTimeSeconds);
 
   return {
     fileName,
@@ -38,6 +40,7 @@ export function parseKlog(text: string, fileName = "uploaded.klog"): KlogParseRe
       roastCurvePoints: parseCurvePoints(fields.roast_profile, "temperature"),
       fanCurvePoints: parseCurvePoints(fields.fan_profile, "fan")
     },
+    fittedRoastAnchors,
     samples,
     metrics,
     rawFields: fields
@@ -143,6 +146,24 @@ function parseSamples(lines: string[]): KlogSample[] {
   }
 
   return samples.sort((a, b) => a.timeSeconds - b.timeSeconds);
+}
+
+function fitActualTemperatureAnchors(samples: KlogSample[], roastEndTimeSeconds: number | null) {
+  const endTime = roastEndTimeSeconds ?? samples.at(-1)?.timeSeconds ?? null;
+  if (endTime === null) return undefined;
+
+  const points = samples
+    .filter((sample) => sample.timeSeconds <= endTime)
+    .map((sample) => ({
+      timeSeconds: sample.timeSeconds,
+      value: sample.meanTempC ?? sample.tempC ?? sample.spotTempC ?? NaN
+    }))
+    .filter((point) => Number.isFinite(point.value));
+
+  if (points.length < 2) return undefined;
+  const segments = fitPath(points, 2.5);
+  const anchors = segmentsToAnchors(segments);
+  return anchors.length >= 2 ? anchors : undefined;
 }
 
 function calculateMetrics(fields: Record<string, string>, samples: KlogSample[]): KlogParseResult["metrics"] {

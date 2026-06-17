@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectKpro, parseKpro, serializeKpro } from "@/lib/kpro";
+import { detectKpro, filterEditorFields, parseKpro, serializeKpro } from "@/lib/kpro";
 
 const SAMPLE_KPRO = `profile_short_name:Geisha Washed
 profile_designer:C Lab Roastery Ltd.
@@ -58,5 +58,22 @@ fan_profile:0,14000
       { timeSeconds: 0, value: 20 },
       { timeSeconds: 120, value: 150 }
     ]);
+  });
+
+  it("classifies raw kpro fields for the editor panel", () => {
+    const groups = filterEditorFields({
+      profile_short_name: "Display me",
+      recommended_level: "3.2",
+      expect_fc: "204.0",
+      zone1_boost: "1.1",
+      first_crack: "405",
+      custom_parameter: "keep"
+    });
+
+    expect(groups.metadata).toEqual({ profile_short_name: "Display me" });
+    expect(groups.phases).toMatchObject({ recommended_level: "3.2", expect_fc: "204.0" });
+    expect(groups.controls).toEqual({ zone1_boost: "1.1" });
+    expect(groups.internal).toEqual({ custom_parameter: "keep" });
+    expect(groups.internal.first_crack).toBeUndefined();
   });
 });

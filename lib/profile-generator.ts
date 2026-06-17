@@ -1,4 +1,4 @@
-import type { CurvePoint, KproProfile } from "@/lib/types";
+import type { BezierAnchor, CurvePoint, KproProfile } from "@/lib/types";
 import { sampleBezierAnchors, round1, round3 } from "@/lib/curve-bezier";
 
 export type RoastTarget = {
@@ -25,6 +25,13 @@ export type ProfileGeneratorInput = {
     descentOffsetSec: number;
   };
 };
+
+// Kaffelogic Studio physical constants (from core_studio.py)
+const CONTROL_POINT_RATIO = 0.3;
+const MIN_FAN_RPM = 8000;
+const MAX_FAN_RPM = 18000;
+const ROAST_ABSOLUTE_MAX = 20 * 60; // 20 mins
+const AVOID_INFINITE_GRADIENT_THRESHOLD = 0.1;
 
 const DEFAULT_ROAST_LEVELS = [214.9, 216.5, 218, 219.5, 222, 224, 227.1];
 
@@ -147,12 +154,21 @@ function validateGeneratorInput(input: ProfileGeneratorInput) {
   if (input.rorInterval.startSec < 0 || input.rorInterval.endSec > input.drop.t || input.rorInterval.startSec >= input.rorInterval.endSec) {
     throw new Error("RoR interval must sit inside the roast and end before Drop.");
   }
-  if (input.fan.startRpm < 9000 || input.fan.startRpm > 18000 || input.fan.descentRpm < 9000 || input.fan.descentRpm > 18000) {
-    throw new Error("Fan RPM must be between 9000 and 18000.");
+  if (input.fan.startRpm < MIN_FAN_RPM || input.fan.startRpm > MAX_FAN_RPM || input.fan.descentRpm < MIN_FAN_RPM || input.fan.descentRpm > MAX_FAN_RPM) {
+    throw new Error(`Fan RPM must be between ${MIN_FAN_RPM} and ${MAX_FAN_RPM}.`);
+  }
+  if (input.drop.t > ROAST_ABSOLUTE_MAX) {
+    throw new Error(`Drop time must not exceed ${ROAST_ABSOLUTE_MAX / 60} minutes.`);
+  }
+  if (input.drop.T > 300) {
+    throw new Error("Drop temperature must not exceed 300C.");
   }
 }
 
-function buildTemperatureAnchors(input: ProfileGeneratorInput) {
+// ---- Bezier anchor construction using angle-bisector control points ----
+// Ported from Kaffelogic Studio's bezier.py calculateControlPoints()
+
+function buildTemperatureAnchors(input: ProfileGeneratorInput): BezierAnchor[] {
   const ccRamp = Math.round(input.cc.t * 0.35);
   const maillardMid = Math.round((input.cc.t + input.fc.t) / 2);
 
@@ -188,6 +204,128 @@ function buildTemperatureAnchors(input: ProfileGeneratorInput) {
       rightCtrl: { timeSeconds: input.drop.t, value: 0 }
     }
   ];
+}
+
+/**
+ * Re-run control points using the Kaffelogic Studio angle-bisector method.
+ * Call this after the user moves anchor positions to re-calculate smooth handles.
+ */
+export function recalculateControlPoints(anchors: BezierAnchor[], ratio = CONTROL_POINT_RATIO): BezierAnchor[] {
+  const data = deepCloneAnchors(anchors);
+  const n = data.length;
+  if (n === 0) return data;
+
+  // Distance between two 2D points
+  function dist(a: { timeSeconds: number; value: number }, b: { timeSeconds: number; value: number }) {
+    return Math.sqrt((a.timeSeconds - b.timeSeconds) ** 2 + (a.value - b.value) ** 2);
+  }
+
+  // Gradient of line through two points
+  function gradient(a: { timeSeconds: number; value: number }, b: { timeSeconds: number; value: number }) {
+    return b.timeSeconds - a.timeSeconds === 0 ? Number.MAX_VALUE : (b.value - a.value) / (b.timeSeconds - a.timeSeconds);
+  }
+
+  // Midpoint
+  function midpoint(a: { timeSeconds: number; value: number }, b: { timeSeconds: number; value: number }) {
+    return { timeSeconds: (a.timeSeconds + b.timeSeconds) / 2, value: (a.value + b.value) / 2 };
+  }
+
+  // Angle bisector gradient between three collinear-ish points A, B, C
+  function angleBisectorGradient(
+    A: { timeSeconds: number; value: number },
+    B: { timeSeconds: number; value: number },
+    C: { timeSeconds: number; value: number }
+  ) {
+    const AB = dist(A, B);
+    const BC = dist(B, C);
+    const distanceRatio = AB > 0 ? BC / AB : 0;
+    const Cprime = {
+      timeSeconds: B.timeSeconds - (B.timeSeconds - A.timeSeconds) * distanceRatio,
+      value: B.value - (B.value - A.value) * distanceRatio
+    };
+    const mid = midpoint(C, Cprime);
+    if (Math.abs(mid.timeSeconds - B.timeSeconds) < 1e-10 && Math.abs(mid.value - B.value) < 1e-10) {
+      const g = gradient(A, C);
+      return g !== 0 ? -1 / g : Number.MAX_VALUE;
+    }
+    return gradient(mid, B);
+  }
+
+  // Point on a line from origin with given gradient and distance
+  function pointOnLine(
+    origin: { timeSeconds: number; value: number },
+    m: number,
+    d: number,
+    left: boolean
+  ) {
+    const xOffset = Math.sqrt((d * d) / (1 + m * m));
+    const yOffset = xOffset * m;
+    const sign = left ? -1 : 1;
+    return { timeSeconds: origin.timeSeconds + xOffset * sign, value: origin.value + yOffset * sign };
+  }
+
+  // Control point for inner anchor B between A and C
+  function controlPoint(
+    A: { timeSeconds: number; value: number },
+    B: { timeSeconds: number; value: number },
+    C: { timeSeconds: number; value: number },
+    isLeft: boolean
+  ) {
+    const d = isLeft ? dist(A, B) : dist(B, C);
+    const grad = angleBisectorGradient(A, B, C);
+    if (Math.abs(grad) < 1e-10) return isLeft ? { ...A } : { ...B };
+    return pointOnLine(B, -1 / grad, d * ratio, isLeft);
+  }
+
+  // Control point for endpoint
+  function controlEndPoint(
+    A: BezierAnchor,
+    B: BezierAnchor,
+    isStart: boolean
+  ) {
+    const a = A.position;
+    const d = dist(a, B.position) * ratio;
+    if (isStart) {
+      const grad = B.leftCtrl.timeSeconds < a.timeSeconds
+        ? gradient(a, B.position)
+        : gradient(a, B.leftCtrl);
+      return pointOnLine(a, grad, d, false);
+    } else {
+      const grad = A.rightCtrl.timeSeconds > B.position.timeSeconds
+        ? gradient(A.position, B.position)
+        : gradient(A.rightCtrl, B.position);
+      return pointOnLine(B.position, grad, d, true);
+    }
+  }
+
+  // Inner control points
+  for (let i = 1; i < n - 1; i++) {
+    const A = data[i - 1].position;
+    const B = data[i].position;
+    const C = data[i + 1].position;
+    const left = controlPoint(A, B, C, true);
+    data[i].leftCtrl = { timeSeconds: round1(left.timeSeconds), value: round1(left.value) };
+    const right = controlPoint(A, B, C, false);
+    data[i].rightCtrl = { timeSeconds: round1(right.timeSeconds), value: round1(right.value) };
+  }
+
+  // Endpoints
+  if (n >= 2) {
+    data[0].rightCtrl = controlEndPoint(data[0], data[1], true);
+    data[0].leftCtrl = { timeSeconds: 0, value: 0 };
+    data[n - 1].leftCtrl = controlEndPoint(data[n - 2], data[n - 1], false);
+    data[n - 1].rightCtrl = { timeSeconds: 0, value: 0 };
+  }
+
+  // Clamp control points to avoid crossing segment boundaries
+  for (let i = 1; i < n; i++) {
+    const minT = data[i - 1].position.timeSeconds + AVOID_INFINITE_GRADIENT_THRESHOLD;
+    const maxT = data[i].position.timeSeconds - AVOID_INFINITE_GRADIENT_THRESHOLD;
+    data[i].leftCtrl.timeSeconds = Math.max(data[i].leftCtrl.timeSeconds, minT);
+    data[i - 1].rightCtrl.timeSeconds = Math.min(data[i - 1].rightCtrl.timeSeconds, maxT);
+  }
+
+  return data;
 }
 
 function generateFanCurve(input: ProfileGeneratorInput): CurvePoint[] {
@@ -286,4 +424,12 @@ function formatSeconds(seconds: number): string {
 
 function sanitizeName(value: string): string {
   return value.replace(/[^a-zA-Z0-9一-龥_-]+/g, "_").replace(/^_+|_+$/g, "") || "generated-profile";
+}
+
+function deepCloneAnchors(anchors: BezierAnchor[]): BezierAnchor[] {
+  return anchors.map(a => ({
+    position: { ...a.position },
+    leftCtrl: { ...a.leftCtrl },
+    rightCtrl: { ...a.rightCtrl }
+  }));
 }

@@ -41,6 +41,9 @@ describe("klog parsing", () => {
 
     expect(parsed.metadata.profileShortName).toBe("Cupping");
     expect(parsed.samples).toHaveLength(6);
+    expect(parsed.fittedRoastAnchors?.length).toBeGreaterThanOrEqual(2);
+    expect(parsed.fittedRoastAnchors?.[0].position).toEqual({ timeSeconds: 1, value: 25 });
+    expect(parsed.fittedRoastAnchors?.at(-1)?.position.timeSeconds).toBe(181);
     expect(parsed.metrics.roastEndTimeSeconds).toBe(181);
     expect(parsed.metrics.roastEndTemperatureC).toBe(189);
     expect(parsed.metrics.avgAbsTrackingErrorC).toBeLessThan(2);

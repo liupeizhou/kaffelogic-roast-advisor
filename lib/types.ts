@@ -98,6 +98,7 @@ export type KlogParseResult = {
     roastCurvePoints: CurvePoint[];
     fanCurvePoints: CurvePoint[];
   };
+  fittedRoastAnchors?: BezierAnchor[];
   samples: KlogSample[];
   metrics: {
     sampleCount: number;

@@ -1070,6 +1070,193 @@ h3 {
   cursor: grabbing;
 }
 
+/* Full-height curve editor layout */
+.editor-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: calc(100vh - 260px);
+  gap: 0;
+}
+
+.editor-graph {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.editor-chart-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.editor-curve-wrap {
+  width: 100%;
+}
+
+.editor-curve-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #5f6f65;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+  padding-left: 2px;
+}
+
+.editor-panel {
+  width: 320px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: #f5f3ee;
+  border-left: 1px solid var(--line);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.editor-section-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #2d2556;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-left: 2px;
+}
+
+.editor-btn-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.editor-btn-group .ant-upload {
+  grid-column: 1 / -1;
+}
+
+.editor-btn-group button {
+  font-size: 12px;
+  height: 34px;
+}
+
+.editor-alert {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.editor-alert .ant-alert-message {
+  font-size: 12px;
+}
+
+.editor-point-list {
+  display: grid;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.editor-point-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.editor-point-row .ant-input-number {
+  width: 100%;
+}
+
+/* Kaffelogic Studio-style phase panel */
+.phase-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.phase-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.phase-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.phase-info {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.phase-name {
+  font-weight: 600;
+  color: #2d2556;
+  min-width: 56px;
+}
+
+.phase-metric {
+  color: #5f6f65;
+  font-variant-numeric: tabular-nums;
+}
+
+.phase-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.phase-bar-seg {
+  min-width: 4px;
+}
+
+.generator-inline {
+  display: grid;
+  gap: 0;
+}
+
+@media (max-width: 768px) {
+  .editor-layout {
+    flex-direction: column;
+    overflow: visible;
+    min-height: auto;
+  }
+
+  .editor-graph {
+    padding: 12px;
+    overflow: visible;
+  }
+
+  .editor-panel {
+    width: 100%;
+    flex-shrink: 1;
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+
+  .editor-btn-group {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .share-shell {
   display: grid;
   gap: 18px;
