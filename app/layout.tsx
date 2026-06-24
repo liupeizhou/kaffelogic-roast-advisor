@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import AntdProviders from "@/components/antd-providers";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "antd/dist/reset.css";
 import "./globals.css";
 
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AntdRegistry>
           <AntdProviders>{children}</AntdProviders>
         </AntdRegistry>
+        <SpeedInsights />
       </body>
     </html>
   );
