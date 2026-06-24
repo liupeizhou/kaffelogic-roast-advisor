@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import AntdProviders from "@/components/antd-providers";
 import "antd/dist/reset.css";
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AntdRegistry>
           <AntdProviders>{children}</AntdProviders>
         </AntdRegistry>
+        <Analytics />
       </body>
     </html>
   );
